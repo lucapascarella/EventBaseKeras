@@ -181,7 +181,7 @@ if __name__ == '__main__':
     parser.add_argument("-r", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default="dvs")
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
-    parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=5)
+    parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=35)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
     parser.add_argument("-iw", "--img_width", help="Target Image Width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target Image Height", type=int, default=200)
@@ -207,7 +207,7 @@ if __name__ == '__main__':
         print("A valid --frame_mode must be selected")
         exit(-1)
 
-    # Set seed
+    # Set a predefined seed
     if args.random_seed:
         np.random.seed(args.random_seed)
         tf.random.set_seed(args.random_seed)

@@ -199,7 +199,7 @@ class CustomSequence(Sequence):
         for i, batch_index in enumerate(batch_indexes):
             batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size)
             batch_y[i] = self.input_data[batch_index].output
-            # print("{}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename, self.input_data[batch_index].steering, self.input_data[batch_index].output))
+            # print("{:>3}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename, self.input_data[batch_index].steering, self.input_data[batch_index].output))
 
         # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
         # data = tensorflow.data.Dataset.from_tensor_slices(batch_x)
