@@ -23,7 +23,7 @@ class MyInput:
         self.engine_velocity = engine_velocity
         self.vehicle_velocity = vehicle_velocity
         self.frame_number = frame_number
-        self.output = None
+        self.output = None  # Normalized steering between -1.0 and 1.0
 
 
 class CustomSequence(Sequence):
@@ -72,17 +72,17 @@ class CustomSequence(Sequence):
             self.event_percentiles = None
 
         # Get a list of input data folders
-        expected_files = 0
+        steering_datapoints = 0
         self.input_data = []
         for sub_dir_level_one in sorted(os.listdir(input_dir_data)):
             sub_dir_level_one = os.path.join(input_dir_data, sub_dir_level_one)
             if os.path.isdir(sub_dir_level_one):
 
-                # Check if input data are organized properly in the required sub folder structure
+                # Check if input data are organized properly as in the required sub folder structure
                 steering_filename = os.path.join(sub_dir_level_one, 'sync_steering.txt')
                 if {'dvs', 'aps', 'aps_diff'}.issubset(os.listdir(sub_dir_level_one)) and os.path.isfile(steering_filename):
                     steering = np.loadtxt(steering_filename, delimiter=',', skiprows=1)
-                    expected_files += steering.shape[0]
+                    steering_datapoints += steering.shape[0]
 
                     sub_dir_level_two = os.path.join(sub_dir_level_one, self.frame_mode)
                     unsorted_files = []
@@ -99,12 +99,15 @@ class CustomSequence(Sequence):
                         for index, filename in enumerate(sorted_files):
                             offset = 6  # This is more or less 1/3s in the future!
                             if index + offset < steering.shape[0]:
-                                # Filter those images whose velocity is under 23 km/h and 30% of images whose steering is under 5 (for training)
-                                if self.is_training and (np.abs(steering[index][3]) < 2.3e1 or (np.abs(steering[index + offset][0]) < 5.0 and np.random.random() < 0.3)):
-                                    self.input_data.append(MyInput(filename, steering[index][0], steering[index][1], steering[index][2], steering[index][3], index))
-                                # Filter those images whose velocity is under 15 km/h (for evaluation)
-                                if not self.is_training and np.abs(steering[index][3]) < 1.5e1:
-                                    self.input_data.append(MyInput(filename, steering[index][0], steering[index][1], steering[index][2], steering[index][3], index))
+                                if self.is_training:
+                                    # Filter those images whose velocity is under 23 km/h and 30% of images whose steering is under 5 (for training)
+                                    if np.abs(steering[index][3]) >= 2.3e1 and (np.abs(steering[index + offset][0]) >= 5.0 or np.random.random() <= 0.3):
+                                        self.input_data.append(MyInput(filename, steering[index][0], steering[index][1], steering[index][2], steering[index][3], index))
+                                else:
+                                    # Filter those images whose velocity is under 15 km/h (for evaluation)
+                                    if np.abs(steering[index][3]) >= 1.5e1:
+                                        self.input_data.append(MyInput(filename, steering[index][0], steering[index][1], steering[index][2], steering[index][3], index))
+
                     else:
                         raise ValueError("Mismatch between frames in {} and rows in ".format(sub_dir_level_two, steering_filename))
                 else:
@@ -122,7 +125,7 @@ class CustomSequence(Sequence):
         ])
 
         self.samples = len(self.input_data)
-        print("Selected {} of {} frames for {}".format(self.samples, expected_files, 'training' if is_training else 'validation'))
+        print("Selected {} of {} frames for {}".format(self.samples, steering_datapoints, 'training' if is_training else 'validation'))
         self.indexes = np.arange(self.samples)
         if self.shuffle:
             np.random.shuffle(self.indexes)
@@ -190,17 +193,17 @@ class CustomSequence(Sequence):
         # get batch indexes from shuffled indexes
         batch_indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
 
-        batch_x = np.zeros((self.batch_size,) + self.image_size + (self.img_channels,), dtype=backend.floatx())
+        batch_x = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.img_channels), dtype=backend.floatx())
         batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
 
         for i, batch_index in enumerate(batch_indexes):
             batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size)
             batch_y[i] = self.input_data[batch_index].output
-            # print("File {} steering {} {}".format(self.input_data[batch_index].filename, self.input_data[batch_index].steering, self.input_data[batch_index].output))
+            # print("{}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename, self.input_data[batch_index].steering, self.input_data[batch_index].output))
 
         # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
-        data = tensorflow.data.Dataset.from_tensor_slices(batch_x)
-        data.map(lambda x: self.data_augmentation(x))
+        # data = tensorflow.data.Dataset.from_tensor_slices(batch_x)
+        # data.map(lambda x: self.data_augmentation(x))
 
         return batch_x, batch_y
 
