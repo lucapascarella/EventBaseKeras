@@ -6,35 +6,45 @@ import DataGenerator
 
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
+
 from tensorflow import keras
 from keras.models import Model
 from keras import backend
 from keras.callbacks import ModelCheckpoint, History
 from keras.applications import ResNet50
 from keras.layers import Dense, GlobalAveragePooling2D
-import matplotlib.pyplot as plt
+from keras.models import model_from_json
 
 
-def build_model(img_width: int, img_height: int, img_channels: int, output_dim: int, random_init: bool = True, weights_path: str = None) -> Model:
-    img_input = keras.Input(shape=(img_width, img_height, img_channels))
-    print(img_input.shape)
+def build_model(img_width: int, img_height: int, img_channels: int, output_dim: int, model_architecture: str = None, weights_path: str = None, random_init: bool = True) -> Model:
+    if model_architecture:
+        # Load the model architecture from file
+        with open(model_architecture, 'r') as json_file:
+            model = model_from_json(json_file.read())
+    else:
+        # None starts from scratch, 'imagenet' reuses imagenet pre-trained model
+        weights = None if random_init else 'imagenet'
 
-    # None starts from scratch, 'imagenet' reuses imagenet pre-trained model
-    weights = None if random_init else 'imagenet'
+        img_input = keras.Input(shape=(img_width, img_height, img_channels))
 
-    base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
-    x = base_model.output
-    x = GlobalAveragePooling2D()(x)
+        base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
 
-    x = Dense(1024, activation='relu')(x)
+        x = GlobalAveragePooling2D()(base_model.output)
+        x = Dense(1024, activation='relu')(x)
 
-    # Steering channel
-    output = Dense(output_dim)(x)
+        # Steering prediction
+        output = Dense(output_dim)(x)
 
-    model = Model(inputs=[img_input], outputs=[output])
-    # print(model.summary())
+        model = Model(inputs=[img_input], outputs=[output])
+        # print(model.summary())
+
+        # Save the model's architecture in JSON file
+        with open("model_architecture.json", "w") as f:
+            f.write(model.to_json())
 
     if weights_path:
+        # Load a saved checkpoint
         try:
             model.load_weights(weights_path)
             print("Loaded model from {}".format(weights_path))
@@ -93,15 +103,13 @@ def plot_history(history: History) -> None:
     plt.xlabel('Epoch')
     plt.legend(['train', 'test', 'Steering train', 'Steering test'], loc='upper left')
 
-    plt.savefig("loss.png", dpi=plt.figure(figsize=(3, 6)).dpi)
-    plt.show()
+    plt.savefig("loss.png")
+    # plt.show()
 
 
 def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence, val_data_generator: DataGenerator.CustomSequence,
                 batch_size: int, learn_rate: float, initial_epoch: int, epochs: int, checkpoint_path: str):
-    lr_scale_factor = 0.5
-
-    # Create the experiment rootdir if not already there
+    # Create the checkpoint directory if it does not already exist
     if not os.path.exists(checkpoint_path):
         os.makedirs(checkpoint_path)
 
@@ -117,10 +125,10 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
     write_best_model = ModelCheckpoint(filepath=weights_path, monitor='val_steering_loss', save_best_only=True, save_weights_only=True)
 
     # Save training and validation losses
-    save_model_and_loss = log_utils.MyCallback(checkpoint_path, batch_size, lr_scale_factor)
+    save_model_and_loss = log_utils.MyCallback(checkpoint_path, batch_size, 0.5)
 
     # Train model
-    steps_per_epoch = np.minimum(int(np.ceil(train_data_generator.samples / batch_size)), 2000)
+    steps_per_epoch = np.minimum(int(np.ceil(train_data_generator.samples / batch_size) - 1), 2000)
     validation_steps = int(np.ceil(val_data_generator.samples / batch_size)) - 1
 
     print("Datasets size. Train: {}, validation: {}, batch: {}".format(train_data_generator.samples, val_data_generator.samples, batch_size))
@@ -128,7 +136,7 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
     print("Validation steps {}".format(validation_steps))
 
     history = model.fit(train_data_generator, batch_size=batch_size,
-                        epochs=epochs, steps_per_epoch=steps_per_epoch - 1,
+                        epochs=epochs, steps_per_epoch=steps_per_epoch,
                         callbacks=[write_best_model, save_model_and_loss],
                         validation_data=val_data_generator,
                         validation_steps=validation_steps,
@@ -159,12 +167,7 @@ def _main(flags: argparse) -> None:
     val_image_loader = DataGenerator.CustomSequence(flags.test_dir, flags.frame_mode, False, (img_height, img_width), batch_size, True)
 
     # Create a Keras model
-    model = build_model(img_height, img_width, img_channels, 1, False, flags.model_weights)
-
-    # Save model's architecture in JSON file
-    with open(os.path.join(checkpoint_path, "model.json"), "w") as f:
-        f.write(model.to_json())
-
+    model = build_model(img_height, img_width, img_channels, 1, flags.model_architecture, flags.model_weights, False)
     train_model(model, train_image_loader, val_image_loader, batch_size, learn_rage, initial_epoch, epochs, checkpoint_path)
 
 
@@ -173,11 +176,12 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--train_dir", help="Folder containing training experiments", type=str, default=None)
     parser.add_argument("-v", "--test_dir", help="Folder containing testing experiments", type=str, default=None)
     parser.add_argument("-c", "--checkpoints", help="Folder in which save checkpoints", type=str, default="checkpoints")
-    parser.add_argument("-w", "--model_weights", help="HDF5 file containing the saved model weights", type=str, default=None)
+    parser.add_argument("-w", "--model_weights", help="Load the model weights from a HDF5 checkpoint", type=str, default=None)
+    parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
     parser.add_argument("-r", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default="dvs")
-    parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=32)
-    parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=50)
+    parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
+    parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=5)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
     parser.add_argument("-iw", "--img_width", help="Target Image Width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target Image Height", type=int, default=200)

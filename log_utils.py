@@ -54,7 +54,7 @@ class MyCallback(callbacks.Callback):
         # Hard mining
         sess = backend.get_session()
         mse_function = self.batch_size - (self.batch_size - 10) * (np.maximum(0.0, 1.0 - np.exp(-1.0 / 30.0 * (epoch - 30.0))))
-        self.model.k_mse.load(int(np.round(mse_function)), sess)
+        self.model.k_mse.assign(int(np.round(mse_function)), sess)
 
     def on_train_end(self, logs=None):
         if logs is None:
