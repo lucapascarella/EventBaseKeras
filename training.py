@@ -1,17 +1,16 @@
 import argparse
 import os
 
+import utils
 import log_utils
 import DataGenerator
 
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plt
 
 from tensorflow import keras
 from keras.models import Model
-from keras import backend
-from keras.callbacks import ModelCheckpoint, History
+from keras.callbacks import ModelCheckpoint
 from keras.applications import ResNet50
 from keras.layers import Dense, GlobalAveragePooling2D
 from keras.models import model_from_json
@@ -48,69 +47,14 @@ def build_model(img_width: int, img_height: int, img_channels: int, output_dim: 
         try:
             model.load_weights(weights_path)
             print("Loaded model from {}".format(weights_path))
-        except ImportError as e:
-            print("Impossible to find weight path. Returning untrained model")
-        except ValueError as e:
-            print("Impossible to find weight path. Returning untrained model")
+        except ImportError or ValueError as e:
+            print("Impossible to find weight path. Returning untrained model! {}".format(e))
 
     return model
 
 
-def steering_loss(y_true, y_pred):
-    return tf.reduce_mean(backend.square(y_pred - y_true))
-
-
-def pred_std(y_true, y_pred):
-    _, var = tf.nn.moments(y_pred, axes=[0])
-    return tf.sqrt(var)
-
-
-def hard_mining_mse(k):
-    """
-    Compute MSE for steering evaluation and hard-mining for the current batch.
-
-    # Arguments
-        k: number of samples for hard-mining.
-
-    # Returns
-        custom_mse: average MSE for the current batch.
-    """
-
-    def custom_mse(y_true, y_pred):
-        # Steering loss
-        l_steer = backend.square(y_pred - y_true)
-        l_steer = tf.squeeze(l_steer, axis=-1)
-
-        # Hard mining
-        k_min = tf.minimum(k, tf.shape(l_steer)[0])
-        _, indices = tf.nn.top_k(l_steer, k=k_min)
-        max_l_steer = tf.gather(l_steer, indices)
-        hard_l_steer = tf.divide(tf.reduce_sum(max_l_steer), tf.cast(k, tf.float32))
-
-        return hard_l_steer
-
-    return custom_mse
-
-
-def plot_history(history: History) -> None:
-    # summarize history for loss
-    plt.gca().set_ylim([0.0001, 1])
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    # plt.plot(history.history['steering_loss'])
-    # plt.plot(history.history['val_steering_loss'])
-    plt.yscale('log')
-    plt.title('Model loss')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
-    plt.legend(['Steering train', 'Steering val.'], loc='upper left')
-
-    plt.savefig("loss.png")
-    plt.show()
-
-
 def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence, val_data_generator: DataGenerator.CustomSequence,
-                batch_size: int, learn_rate: float, initial_epoch: int, epochs: int, checkpoint_path: str):
+                batch_size: int, learn_rate: float, initial_epoch: int, epochs: int, checkpoint_path: str, use_imagenet: bool):
     # Create the checkpoint directory if it does not already exist
     if not os.path.exists(checkpoint_path):
         os.makedirs(checkpoint_path)
@@ -120,7 +64,7 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
 
     # Configure training process
     optimizer = keras.optimizers.Adam(learning_rate=learn_rate, decay=1e-4)
-    model.compile(loss=[hard_mining_mse(model.k_mse)], optimizer=optimizer, metrics=['accuracy', pred_std])
+    model.compile(loss=[utils.hard_mining_mse(model.k_mse)], optimizer=optimizer, metrics=['accuracy', utils.pred_std])
 
     # Save model with the lowest validation loss
     weights_path = os.path.join(checkpoint_path, 'weights_{epoch:03d}.h5')
@@ -144,7 +88,9 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
                         validation_steps=validation_steps,
                         initial_epoch=initial_epoch)
 
-    plot_history(history)
+    # Plot loss
+    plot_filename = os.path.join(checkpoint_path, 'loss_e{}_b{}_p{}.png'.format(epochs, batch_size, use_imagenet))
+    utils.plot_history(history, plot_filename)
 
 
 def _main(flags: argparse) -> None:
@@ -156,6 +102,7 @@ def _main(flags: argparse) -> None:
     initial_epoch = 0  # Used to restart learning from checkpoint
     epochs = flags.epochs
     checkpoint_path = flags.checkpoints
+    use_imagenet = flags.use_imagenet
 
     # Remove trailing os separator
     train_dir = flags.train_dir[:-1] if flags.train_dir.endswith(os.sep) else flags.train_dir
@@ -173,8 +120,8 @@ def _main(flags: argparse) -> None:
     val_image_loader = DataGenerator.CustomSequence(val_dir, flags.frame_mode, False, (img_height, img_width), batch_size, True)
 
     # Create a Keras model
-    model = build_model(img_height, img_width, img_channels, 1, flags.model_architecture, flags.model_weights, True)
-    train_model(model, train_image_loader, val_image_loader, batch_size, learn_rage, initial_epoch, epochs, checkpoint_path)
+    model = build_model(img_height, img_width, img_channels, 1, flags.model_architecture, flags.model_weights, use_imagenet)
+    train_model(model, train_image_loader, val_image_loader, batch_size, learn_rage, initial_epoch, epochs, checkpoint_path, use_imagenet)
 
 
 if __name__ == '__main__':
@@ -189,6 +136,7 @@ if __name__ == '__main__':
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=30)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
+    parser.add_argument("-p", '--use_imagenet', help="Load Imagenet pre-trained weights", type=bool, default=True)
     parser.add_argument("-iw", "--img_width", help="Target Image Width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target Image Height", type=int, default=200)
     args = parser.parse_args()

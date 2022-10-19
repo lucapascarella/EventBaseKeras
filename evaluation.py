@@ -2,16 +2,15 @@ import argparse
 import json
 import os
 
+import utils
 import DataGenerator
 from unipath import Path
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-from tensorflow import keras
 from keras.models import Model
 from keras import backend
-from keras.callbacks import History
 from keras.models import model_from_json
 
 
@@ -29,42 +28,6 @@ def build_model(model_architecture: str, weights_path: str) -> Model:
         print("Impossible to find weight path. Returning untrained model")
 
     return model
-
-
-def steering_loss(y_true, y_pred):
-    return tf.reduce_mean(backend.square(y_pred - y_true))
-
-
-def pred_std(y_true, y_pred):
-    _, var = tf.nn.moments(y_pred, axes=[0])
-    return tf.sqrt(var)
-
-
-def hard_mining_mse(k):
-    """
-    Compute MSE for steering evaluation and hard-mining for the current batch.
-
-    # Arguments
-        k: number of samples for hard-mining.
-
-    # Returns
-        custom_mse: average MSE for the current batch.
-    """
-
-    def custom_mse(y_true, y_pred):
-        # Steering loss
-        l_steer = backend.square(y_pred - y_true)
-        l_steer = tf.squeeze(l_steer, axis=-1)
-
-        # Hard mining
-        k_min = tf.minimum(k, tf.shape(l_steer)[0])
-        _, indices = tf.nn.top_k(l_steer, k=k_min)
-        max_l_steer = tf.gather(l_steer, indices)
-        hard_l_steer = tf.divide(tf.reduce_sum(max_l_steer), tf.cast(k, tf.float32))
-
-        return hard_l_steer
-
-    return custom_mse
 
 
 def _main(flags: argparse) -> None:
