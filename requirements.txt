@@ -1,0 +1,5 @@
+numpy
+matplotlib
+tensorflow
+unipath
+opencv-python

@@ -67,21 +67,6 @@ def hard_mining_mse(k):
     return custom_mse
 
 
-def plot_history(history: History) -> None:
-    # summarize history for loss
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    plt.plot(history.history['steering_loss'])
-    plt.plot(history.history['val_steering_loss'])
-    plt.title('Model loss')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
-    plt.legend(['train', 'test', 'Steering train', 'Steering test'], loc='upper left')
-
-    plt.savefig("loss.png")
-    # plt.show()
-
-
 def _main(flags: argparse) -> None:
     channels_dict = {"grayscale": 1, "rgb": 3, "rgba": 4}
     img_height, img_width = flags.img_height, flags.img_width
@@ -180,22 +165,6 @@ if __name__ == '__main__':
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
     args = parser.parse_args()
-
-    y = np.zeros((3, 2), dtype=np.float32)
-
-    a = np.array([1, 2], dtype=np.float32)
-    b = np.array([3, 4], dtype=np.float32)
-
-    s = np.stack((a, b), axis=1)
-    # s = np.hstack((a,b))
-
-    print(a.shape)
-    print(y.shape)
-
-    y[0] = a
-
-    y = y.flatten()
-    print(y)
 
     if args.test_dir is None:
         print("Missing --test_dir parameter")

@@ -17,14 +17,14 @@ from keras.layers import Dense, GlobalAveragePooling2D
 from keras.models import model_from_json
 
 
-def build_model(img_width: int, img_height: int, img_channels: int, output_dim: int, model_architecture: str = None, weights_path: str = None, random_init: bool = True) -> Model:
+def build_model(img_width: int, img_height: int, img_channels: int, output_dim: int, model_architecture: str = None, weights_path: str = None, use_imagenet: bool = True) -> Model:
     if model_architecture:
         # Load the model architecture from file
         with open(model_architecture, 'r') as json_file:
             model = model_from_json(json_file.read())
     else:
         # None starts from scratch, 'imagenet' reuses imagenet pre-trained model
-        weights = None if random_init else 'imagenet'
+        weights = 'imagenet' if use_imagenet else None
 
         img_input = keras.Input(shape=(img_width, img_height, img_channels))
 
@@ -94,17 +94,19 @@ def hard_mining_mse(k):
 
 def plot_history(history: History) -> None:
     # summarize history for loss
+    plt.gca().set_ylim([0.0001, 1])
     plt.plot(history.history['loss'])
     plt.plot(history.history['val_loss'])
-    plt.plot(history.history['steering_loss'])
-    plt.plot(history.history['val_steering_loss'])
+    # plt.plot(history.history['steering_loss'])
+    # plt.plot(history.history['val_steering_loss'])
+    plt.yscale('log')
     plt.title('Model loss')
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
-    plt.legend(['train', 'test', 'Steering train', 'Steering test'], loc='upper left')
+    plt.legend(['Steering train', 'Steering val.'], loc='upper left')
 
     plt.savefig("loss.png")
-    # plt.show()
+    plt.show()
 
 
 def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence, val_data_generator: DataGenerator.CustomSequence,
@@ -118,11 +120,11 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
 
     # Configure training process
     optimizer = keras.optimizers.Adam(learning_rate=learn_rate, decay=1e-4)
-    model.compile(loss=[hard_mining_mse(model.k_mse)], optimizer=optimizer, metrics=[steering_loss, pred_std])
+    model.compile(loss=[hard_mining_mse(model.k_mse)], optimizer=optimizer, metrics=['accuracy', pred_std])
 
     # Save model with the lowest validation loss
     weights_path = os.path.join(checkpoint_path, 'weights_{epoch:03d}.h5')
-    write_best_model = ModelCheckpoint(filepath=weights_path, monitor='val_steering_loss', save_best_only=True, save_weights_only=True)
+    write_best_model = ModelCheckpoint(filepath=weights_path, monitor='val_loss', save_best_only=True, save_weights_only=True)
 
     # Save training and validation losses
     save_model_and_loss = log_utils.MyCallback(checkpoint_path, batch_size, 0.5)
@@ -155,6 +157,10 @@ def _main(flags: argparse) -> None:
     epochs = flags.epochs
     checkpoint_path = flags.checkpoints
 
+    # Remove trailing os separator
+    train_dir = flags.train_dir[:-1] if flags.train_dir.endswith(os.sep) else flags.train_dir
+    val_dir = flags.val_dir[:-1] if flags.val_dir.endswith(os.sep) else flags.val_dir
+
     # Generate training data with real-time augmentation
     if flags.frame_mode == "dvs":
         img_channels = channels_dict["rgb"]
@@ -163,25 +169,25 @@ def _main(flags: argparse) -> None:
     else:
         img_channels = channels_dict["rgb"]
 
-    train_image_loader = DataGenerator.CustomSequence(flags.train_dir, flags.frame_mode, True, (img_height, img_width), batch_size, True)
-    val_image_loader = DataGenerator.CustomSequence(flags.test_dir, flags.frame_mode, False, (img_height, img_width), batch_size, True)
+    train_image_loader = DataGenerator.CustomSequence(train_dir, flags.frame_mode, True, (img_height, img_width), batch_size, True)
+    val_image_loader = DataGenerator.CustomSequence(val_dir, flags.frame_mode, False, (img_height, img_width), batch_size, True)
 
     # Create a Keras model
-    model = build_model(img_height, img_width, img_channels, 1, flags.model_architecture, flags.model_weights, False)
+    model = build_model(img_height, img_width, img_channels, 1, flags.model_architecture, flags.model_weights, True)
     train_model(model, train_image_loader, val_image_loader, batch_size, learn_rage, initial_epoch, epochs, checkpoint_path)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--train_dir", help="Folder containing training experiments", type=str, default=None)
-    parser.add_argument("-v", "--test_dir", help="Folder containing testing experiments", type=str, default=None)
+    parser.add_argument("-v", "--val_dir", help="Folder containing validation experiments", type=str, default=None)
     parser.add_argument("-c", "--checkpoints", help="Folder in which save checkpoints", type=str, default="checkpoints")
     parser.add_argument("-w", "--model_weights", help="Load the model weights from a HDF5 checkpoint", type=str, default=None)
     parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
     parser.add_argument("-r", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default="dvs")
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
-    parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=35)
+    parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=30)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
     parser.add_argument("-iw", "--img_width", help="Target Image Width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target Image Height", type=int, default=200)
@@ -191,8 +197,8 @@ if __name__ == '__main__':
         print("Missing --train_dir parameter")
         exit(-1)
 
-    if args.test_dir is None:
-        print("Missing --test_dir parameter")
+    if args.val_dir is None:
+        print("Missing --val_dir parameter")
         exit(-1)
 
     if not os.path.exists(args.train_dir) or not os.path.isdir(args.train_dir):

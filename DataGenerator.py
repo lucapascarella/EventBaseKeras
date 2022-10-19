@@ -64,10 +64,11 @@ class CustomSequence(Sequence):
         self.scaler_json = os.path.join(Path(input_dir_data).parent, 'scaler.json')
 
         if self.frame_mode == 'dvs':
+            percentile_filename = os.path.join(Path(input_dir_data).parent, 'percentiles.txt')
             try:
-                self.event_percentiles = np.loadtxt(os.path.join(Path(input_dir_data).parent, 'percentiles.txt'), usecols=0, skiprows=1)
+                self.event_percentiles = np.loadtxt(percentile_filename, usecols=0, skiprows=1)
             except IOError:
-                raise IOError("Percentiles file not found")
+                raise IOError("Percentile file {} not found".format(percentile_filename))
         else:
             self.event_percentiles = None
 
