@@ -5,7 +5,7 @@ import json
 import numpy as np
 
 from unipath import Path
-import tensorflow
+from tensorflow import keras
 from keras import backend
 from keras import Sequential
 from keras.utils import Sequence
@@ -16,14 +16,24 @@ import img_utils
 
 
 class MyInput:
-    def __init__(self, filename: str, steering: float, torque: float, engine_velocity: float, vehicle_velocity: float, frame_number: int):
-        self.filename = filename
-        self.steering = steering
-        self.torque = torque
-        self.engine_velocity = engine_velocity
-        self.vehicle_velocity = vehicle_velocity
+    def __init__(self, frame_number: int, filename: str,
+                 actual_steering: float, actual_torque: float, actual_engine_velocity: float, actual_vehicle_velocity: float,
+                 future_steering: float, future_torque: float, future_engine_velocity: float, future_vehicle_velocity: float):
         self.frame_number = frame_number
-        self.output = None  # Normalized steering between -1.0 and 1.0
+        self.filename = filename
+
+        self.actual_steering = actual_steering
+        self.actual_torque = actual_torque
+        self.actual_engine_velocity = actual_engine_velocity
+        self.actual_vehicle_velocity = actual_vehicle_velocity
+
+        self.future_steering = future_steering
+        self.future_torque = future_torque
+        self.future_engine_velocity = future_engine_velocity
+        self.future_vehicle_velocity = future_vehicle_velocity
+
+        self.actual_output = None  # Normalized actual steering between -1.0 and 1.0
+        self.future_output = None  # Normalized future steering between -1.0 and 1.0
 
 
 class CustomSequence(Sequence):
@@ -102,22 +112,33 @@ class CustomSequence(Sequence):
                             if index + offset < steering.shape[0]:
                                 if self.is_training:
                                     # Filter those images whose velocity is under 23 km/h and 30% of images whose steering is under 5 (for training)
-                                    if np.abs(steering[index][3]) >= 2.3e1 and (np.abs(steering[index + offset][0]) >= 5.0 or np.random.random() <= 0.3):
-                                        self.input_data.append(MyInput(filename, steering[index][0], steering[index][1], steering[index][2], steering[index][3], index))
+                                    if np.abs(steering[index][3]) >= 2.3e1 and (np.abs(steering[index][0]) >= 5.0 or np.random.random() <= 0.3):
+                                        actual_steering, actual_torque, actual_engine, actual_vehicle = steering[index]
+                                        future_steering, future_torque, future_engine, future_vehicle = steering[index + offset]
+                                        self.input_data.append(MyInput(index, filename, actual_steering, actual_torque, actual_engine, actual_vehicle,
+                                                                       future_steering, future_torque, future_engine, future_vehicle))
                                 else:
                                     # Filter those images whose velocity is under 15 km/h (for evaluation)
-                                    if np.abs(steering[index][3]) >= 1.5e1:
-                                        self.input_data.append(MyInput(filename, steering[index][0], steering[index][1], steering[index][2], steering[index][3], index))
+                                    if np.abs(steering[index + offset][3]) >= 1.5e1:
+                                        actual_steering, actual_torque, actual_engine, actual_vehicle = steering[index]
+                                        future_steering, future_torque, future_engine, future_vehicle = steering[index + offset]
+                                        self.input_data.append(MyInput(index, filename, actual_steering, actual_torque, actual_engine, actual_vehicle,
+                                                                       future_steering, future_torque, future_engine, future_vehicle))
 
                     else:
                         raise ValueError("Mismatch between frames in {} and rows in ".format(sub_dir_level_two, steering_filename))
                 else:
                     raise ValueError("Invalid frame/folder structure:")
 
-        # Normalize output/prediction
-        outputs = self._output_normalization(np.array([i.steering for i in self.input_data], dtype=backend.floatx()))
-        for idx, out in enumerate(outputs):
-            self.input_data[idx].output = out
+        # Normalize actual output/prediction
+        np_actual_outputs = self._output_normalization(np.array([i.actual_steering for i in self.input_data], dtype=backend.floatx()))
+        for idx, out in enumerate(np_actual_outputs):
+            self.input_data[idx].actual_output = out
+
+        # Normalize future output/prediction
+        np_future_outputs = self._output_normalization(np.array([i.future_steering for i in self.input_data], dtype=backend.floatx()))
+        for idx, out in enumerate(np_future_outputs):
+            self.input_data[idx].future_output = out
 
         # Used to emulate ImageDataGenerator => random_transform(x) and standardize(x)
         self.data_augmentation = Sequential([
@@ -199,7 +220,7 @@ class CustomSequence(Sequence):
 
         for i, batch_index in enumerate(batch_indexes):
             batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size)
-            batch_y[i] = self.input_data[batch_index].output
+            batch_y[i] = self.input_data[batch_index].future_output
             # print("{:>3}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename, self.input_data[batch_index].steering, self.input_data[batch_index].output))
 
         # Emulate ImageDataGenerator => random_transform(x) and standardize(x)

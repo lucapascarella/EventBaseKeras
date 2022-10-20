@@ -51,9 +51,9 @@ def _main(flags: argparse) -> None:
     # Compile model
     model.compile(loss='mse', optimizer='sgd')
 
-    # Get predictions and ground
-    steps = 30
+    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 4000)
 
+    # Get predictions and ground
     y_gt = np.zeros((steps, batch_size), dtype=backend.floatx())
     y_mp = np.zeros((steps, batch_size), dtype=backend.floatx())
 

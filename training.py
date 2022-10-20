@@ -95,9 +95,8 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
 
 
 def _main(flags: argparse) -> None:
-    channels_dict = {"grayscale": 1, "rgb": 3, "rgba": 4}
     img_height, img_width = flags.img_height, flags.img_width
-    # img_channels = channels_dict["rgb"]
+    img_channels = 3  # Always use 3 channels, even for grayscale that are transformed in RGB later
     batch_size = flags.batch_size
     learn_rate = flags.learning_rate
     initial_epoch = 0  # Used to restart learning from checkpoint
@@ -110,13 +109,6 @@ def _main(flags: argparse) -> None:
     val_dir = flags.val_dir[:-1] if flags.val_dir.endswith(os.sep) else flags.val_dir
 
     # Generate training data with real-time augmentation
-    if flags.frame_mode == "dvs":
-        img_channels = channels_dict["rgb"]
-    elif flags.frame_mode == "aps":
-        img_channels = channels_dict["grayscale"]
-    else:
-        img_channels = channels_dict["rgb"]
-
     train_image_loader = DataGenerator.CustomSequence(train_dir, flags.frame_mode, True, (img_height, img_width), batch_size, True)
     val_image_loader = DataGenerator.CustomSequence(val_dir, flags.frame_mode, False, (img_height, img_width), batch_size, True)
 
@@ -133,7 +125,7 @@ if __name__ == '__main__':
     parser.add_argument("-w", "--model_weights", help="Load the model weights from a HDF5 checkpoint", type=str, default=None)
     parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
     parser.add_argument("-r", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
-    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default="dvs")
+    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default="aps")
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=30)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
