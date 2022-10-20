@@ -54,7 +54,7 @@ def plot_history(history: History, filename: str = None) -> None:
 
     plt.legend(legend, loc='upper left')
 
-    plt.gca().set_ylim([0.0001, 1])
+    plt.gca().set_ylim([0.00001, 1])
     plt.yscale('log')
     plt.title('Model loss')
     plt.ylabel('Loss')

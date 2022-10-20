@@ -12,9 +12,8 @@ MIN_LR = 0.00001
 
 class MyCallback(callbacks.Callback):
 
-    def __init__(self, filepath: str, batch_size: int, factor: float = 1.0):
+    def __init__(self, filename: str, batch_size: int, factor: float = 1.0):
         super().__init__()
-        self.filepath = filepath
         self.batch_size = batch_size
         self.factor = factor
         self.min_lr = MIN_LR
@@ -26,7 +25,7 @@ class MyCallback(callbacks.Callback):
         # self.hl.xlabel('Epoch')
         # self.hl.legend(['Steering train', 'Steering val.'], loc='upper left')
 
-        self.loss_file = open(os.path.join(filepath, "loss.csv"), "w")
+        self.loss_file = open(filename, "w")
         self.loss_file.write("epoch,steering_loss,val_steering_loss\n")
 
     def on_epoch_end(self, epoch, logs=None):
@@ -34,7 +33,7 @@ class MyCallback(callbacks.Callback):
             logs = {}
 
         # Save training and validation losses
-        self.loss_file.write("{},{},{}\n".format(epoch,logs.get('steering_loss'), logs.get('val_steering_loss')))
+        self.loss_file.write("{},{},{}\n".format(epoch,logs.get('loss'), logs.get('val_loss')))
         self.loss_file.flush()
 
         # Reduce learning_rate in critical conditions

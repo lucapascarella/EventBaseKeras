@@ -71,15 +71,16 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
     write_best_model = ModelCheckpoint(filepath=weights_path, monitor='val_loss', save_best_only=True, save_weights_only=True)
 
     # Save training and validation losses
-    save_model_and_loss = log_utils.MyCallback(checkpoint_path, batch_size, 0.5)
+    loss_filename = os.path.join(checkpoint_path, 'loss_e{}_b{}_p{}.csv'.format(epochs, batch_size, use_imagenet))
+    save_model_and_loss = log_utils.MyCallback(loss_filename, batch_size, 0.5)
 
     # Train model
-    steps_per_epoch = np.minimum(int(np.ceil(train_data_generator.samples / batch_size) - 1), 2000)
-    validation_steps = int(np.ceil(val_data_generator.samples / batch_size)) - 1
+    steps_per_epoch = np.minimum(int(np.ceil(train_data_generator.samples / batch_size) - 1), 5000)
+    validation_steps = np.minimum(int(np.ceil(val_data_generator.samples / batch_size)) - 1, 500)
 
     print("Datasets size. Train: {}, validation: {}, batch: {}".format(train_data_generator.samples, val_data_generator.samples, batch_size))
-    print("Step per epoch {}".format(steps_per_epoch))
-    print("Validation steps {}".format(validation_steps))
+    print("Training steps per epoch {}".format(steps_per_epoch))
+    print("Validation steps per epoch {}".format(validation_steps))
 
     history = model.fit(train_data_generator, batch_size=batch_size,
                         epochs=epochs, steps_per_epoch=steps_per_epoch,
@@ -98,7 +99,7 @@ def _main(flags: argparse) -> None:
     img_height, img_width = flags.img_height, flags.img_width
     # img_channels = channels_dict["rgb"]
     batch_size = flags.batch_size
-    learn_rage = flags.learning_rate
+    learn_rate = flags.learning_rate
     initial_epoch = 0  # Used to restart learning from checkpoint
     epochs = flags.epochs
     checkpoint_path = flags.checkpoints
@@ -121,7 +122,7 @@ def _main(flags: argparse) -> None:
 
     # Create a Keras model
     model = build_model(img_height, img_width, img_channels, 1, flags.model_architecture, flags.model_weights, use_imagenet)
-    train_model(model, train_image_loader, val_image_loader, batch_size, learn_rage, initial_epoch, epochs, checkpoint_path, use_imagenet)
+    train_model(model, train_image_loader, val_image_loader, batch_size, learn_rate, initial_epoch, epochs, checkpoint_path, use_imagenet)
 
 
 if __name__ == '__main__':
