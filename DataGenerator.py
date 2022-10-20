@@ -5,14 +5,17 @@ import json
 import numpy as np
 
 from unipath import Path
+import tensorflow
 from tensorflow import keras
 from keras import backend
 from keras import Sequential
 from keras.utils import Sequence
-from keras.layers import RandomFlip, RandomRotation
+from keras.layers import RandomRotation, RandomZoom, RandomCrop, RandomFlip
 from typing import Tuple
 
 import img_utils
+
+import matplotlib.pyplot as plt
 
 
 class MyInput:
@@ -126,9 +129,9 @@ class CustomSequence(Sequence):
                                                                        future_steering, future_torque, future_engine, future_vehicle))
 
                     else:
-                        raise ValueError("Mismatch between frames in {} and rows in ".format(sub_dir_level_two, steering_filename))
+                        raise ValueError("Mismatch between frames in {} and rows in {}".format(sub_dir_level_two, steering_filename))
                 else:
-                    raise ValueError("Invalid frame/folder structure:")
+                    raise ValueError("Invalid frame/folder structure: {}".format(sub_dir_level_one))
 
         # Normalize actual output/prediction
         np_actual_outputs = self._output_normalization(np.array([i.actual_steering for i in self.input_data], dtype=backend.floatx()))
@@ -142,8 +145,10 @@ class CustomSequence(Sequence):
 
         # Used to emulate ImageDataGenerator => random_transform(x) and standardize(x)
         self.data_augmentation = Sequential([
-            RandomFlip('horizontal'),
-            RandomRotation(0.2),
+            # RandomFlip("horizontal_and_vertical")
+            RandomRotation(0.1),
+            # RandomZoom(0.5, 0.2),
+            # RandomCrop(0.2, 0.5),
         ])
 
         self.samples = len(self.input_data)
@@ -224,6 +229,22 @@ class CustomSequence(Sequence):
             # print("{:>3}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename, self.input_data[batch_index].steering, self.input_data[batch_index].output))
 
         # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
+        batch_x_aug = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.img_channels), dtype=backend.floatx())
+        plt.figure(figsize=(10, 10))
+        for i in range(batch_x.shape[0]):
+            image = batch_x[i, :, :, :]
+            ax = plt.subplot(1, 2, 1)
+            plt.imshow(image.astype("int"))
+
+            # Does not work without passing the two seconds arguments
+            xx = self.data_augmentation(image, {"flip_horizontal": False, "flip_vertical": False})
+
+            ax = plt.subplot(1, 2, 2)
+            plt.imshow(xx.numpy().astype("int"))
+            plt.axis("off")
+            plt.show()
+            # batch_x_aug
+
         # data = tensorflow.data.Dataset.from_tensor_slices(batch_x)
         # data.map(lambda x: self.data_augmentation(x))
 

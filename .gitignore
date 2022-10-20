@@ -1,6 +1,11 @@
 # Model generated files and directories
 data
 checkpoints
+checkpoints_aps_small
+checkpoints_aps_small_no_aug
+checkpoints_aps
+checkpoints_dvs_small
+checkpoints_dvs
 loss.png
 model_architecture.json
 

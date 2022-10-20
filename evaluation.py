@@ -18,31 +18,21 @@ def build_model(model_architecture: str, weights_path: str) -> Model:
     # Load the model architecture from file
     with open(model_architecture, 'r') as json_file:
         model = model_from_json(json_file.read())
+
     # Load a saved checkpoint
     try:
-        model.load_weights(weights_path)
-        print("Loaded model from {}".format(weights_path))
-    except ImportError as e:
-        print("Impossible to find weight path. Returning untrained model")
-    except ValueError as e:
-        print("Impossible to find weight path. Returning untrained model")
+        # Tell the model that the checkpoint will be used to inference only
+        model.load_weights(weights_path).expect_partial()
+        print("Loaded weights from {}".format(weights_path))
+    except ImportError or ValueError as e:
+        raise ValueError("Impossible to load weights from file {} due to: {}".format(weights_path, e))
 
     return model
 
 
 def _main(flags: argparse) -> None:
-    channels_dict = {"grayscale": 1, "rgb": 3, "rgba": 4}
     img_height, img_width = flags.img_height, flags.img_width
-    # img_channels = channels_dict["rgb"]
     batch_size = flags.batch_size
-
-    # Generate training data with real-time augmentation
-    if flags.frame_mode == "dvs":
-        img_channels = channels_dict["rgb"]
-    elif flags.frame_mode == "aps":
-        img_channels = channels_dict["grayscale"]
-    else:
-        img_channels = channels_dict["rgb"]
 
     test_image_loader = DataGenerator.CustomSequence(flags.test_dir, flags.frame_mode, False, (img_height, img_width), batch_size, False)
 
@@ -51,7 +41,7 @@ def _main(flags: argparse) -> None:
     # Compile model
     model.compile(loss='mse', optimizer='sgd')
 
-    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 4000)
+    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 40)
 
     # Get predictions and ground
     y_gt = np.zeros((steps, batch_size), dtype=backend.floatx())
@@ -120,10 +110,10 @@ def _main(flags: argparse) -> None:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--test_dir", help="Folder containing testing experiments", type=str, default=None)
-    parser.add_argument("-w", "--model_weights", help="Load the model weights from a HDF5 checkpoint", type=str, default=None)
+    parser.add_argument("-w", "--model_weights", help="Load the model weights from the native Tensorflow .ckpt format", type=str, default=None)
     parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
     parser.add_argument("-r", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
-    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default="dvs")
+    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
@@ -142,6 +132,10 @@ if __name__ == '__main__':
         exit(-1)
 
     if args.frame_mode not in ["dvs", "aps", "aps_diff"]:
+        print("A valid --frame_mode must be selected")
+        exit(-1)
+
+    if args.frame_mode is None or args.frame_mode not in ["dvs", "aps", "aps_diff"]:
         print("A valid --frame_mode must be selected")
         exit(-1)
 

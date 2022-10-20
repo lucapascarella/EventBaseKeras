@@ -48,7 +48,7 @@ def build_model(img_width: int, img_height: int, img_channels: int, output_dim: 
             model.load_weights(weights_path)
             print("Loaded model from {}".format(weights_path))
         except ImportError or ValueError as e:
-            print("Impossible to find weight path. Returning untrained model! {}".format(e))
+            raise ValueError("Impossible to load weights from file {} due to: {}".format(weights_path, e))
 
     return model
 
@@ -66,8 +66,9 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
     optimizer = keras.optimizers.Adam(learning_rate=learn_rate, decay=1e-4)
     model.compile(loss=[utils.hard_mining_mse(model.k_mse)], optimizer=optimizer, metrics=['accuracy', utils.pred_std])
 
-    # Save model with the lowest validation loss
-    weights_path = os.path.join(checkpoint_path, 'weights_{epoch:03d}.h5')
+    # Save model with the lowest validation loss, use Tensorflow native ckpt to allow easy reload later
+    # weights_path = os.path.join(checkpoint_path, 'weights_{epoch:03d}.h5')
+    weights_path = os.path.join(checkpoint_path, 'weights_{epoch:03d}.ckpt')
     write_best_model = ModelCheckpoint(filepath=weights_path, monitor='val_loss', save_best_only=True, save_weights_only=True)
 
     # Save training and validation losses
@@ -76,7 +77,7 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
 
     # Train model
     steps_per_epoch = np.minimum(int(np.ceil(train_data_generator.samples / batch_size) - 1), 5000)
-    validation_steps = np.minimum(int(np.ceil(val_data_generator.samples / batch_size)) - 1, 500)
+    validation_steps = np.minimum(int(np.ceil(val_data_generator.samples / batch_size)) - 1, np.ceil(int(steps_per_epoch / 10)))
 
     print("Datasets size. Train: {}, validation: {}, batch: {}".format(train_data_generator.samples, val_data_generator.samples, batch_size))
     print("Training steps per epoch {}".format(steps_per_epoch))
@@ -125,7 +126,7 @@ if __name__ == '__main__':
     parser.add_argument("-w", "--model_weights", help="Load the model weights from a HDF5 checkpoint", type=str, default=None)
     parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
     parser.add_argument("-r", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
-    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default="aps")
+    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=30)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
@@ -150,7 +151,7 @@ if __name__ == '__main__':
         print("--train_dir {} is empty".format(args.train_dir))
         exit(-1)
 
-    if args.frame_mode not in ["dvs", "aps", "aps_diff"]:
+    if args.frame_mode is None or args.frame_mode not in ["dvs", "aps", "aps_diff"]:
         print("A valid --frame_mode must be selected")
         exit(-1)
 
