@@ -10,7 +10,7 @@ from tensorflow import keras
 from keras import backend
 from keras import Sequential
 from keras.utils import Sequence
-from keras.layers import RandomRotation, RandomZoom, RandomCrop, RandomFlip
+from keras.layers import RandomRotation, RandomZoom, RandomTranslation, RandomBrightness
 from typing import Tuple
 
 import img_utils
@@ -58,7 +58,7 @@ class CustomSequence(Sequence):
         """
 
     def __init__(self, input_dir_data: str, frame_mode: str = 'dvs', is_training: bool = False, image_size: Tuple[int, int] = (224, 224), batch_size: int = 32,
-                 shuffle: bool = True, seed: int = None, follow_links: bool = False):
+                 shuffle: bool = True, seed: int = None, follow_links: bool = False, augment_data: bool = False):
         # Initialization
         self.is_training = is_training
         self.image_size = image_size
@@ -68,6 +68,7 @@ class CustomSequence(Sequence):
         self.seed = seed
         self.shuffle = shuffle
         self.follow_links = follow_links
+        self.augment_data = augment_data
 
         # Check that the given frame is supported
         if frame_mode not in {'dvs', 'aps', 'aps_diff'}:
@@ -146,9 +147,11 @@ class CustomSequence(Sequence):
         # Used to emulate ImageDataGenerator => random_transform(x) and standardize(x)
         self.data_augmentation = Sequential([
             # RandomFlip("horizontal_and_vertical")
-            RandomRotation(0.1),
-            # RandomZoom(0.5, 0.2),
-            # RandomCrop(0.2, 0.5),
+            RandomRotation(0.02),
+            RandomZoom(0.1, 0.05),
+            RandomTranslation(0.01, 0.01),
+            RandomBrightness(0.1),
+            # RandomContrast(0.2),
         ])
 
         self.samples = len(self.input_data)
@@ -226,29 +229,26 @@ class CustomSequence(Sequence):
         for i, batch_index in enumerate(batch_indexes):
             batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size)
             batch_y[i] = self.input_data[batch_index].future_output
-            # print("{:>3}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename, self.input_data[batch_index].steering, self.input_data[batch_index].output))
+            # print("{:>3}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename,
+            #                                     self.input_data[batch_index].actual_steering, self.input_data[batch_index].actual_output))
 
-        # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
-        batch_x_aug = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.img_channels), dtype=backend.floatx())
-        plt.figure(figsize=(10, 10))
-        for i in range(batch_x.shape[0]):
-            image = batch_x[i, :, :, :]
-            ax = plt.subplot(1, 2, 1)
-            plt.imshow(image.astype("int"))
-
-            # Does not work without passing the two seconds arguments
-            xx = self.data_augmentation(image, {"flip_horizontal": False, "flip_vertical": False})
-
-            ax = plt.subplot(1, 2, 2)
-            plt.imshow(xx.numpy().astype("int"))
-            plt.axis("off")
-            plt.show()
-            # batch_x_aug
-
-        # data = tensorflow.data.Dataset.from_tensor_slices(batch_x)
-        # data.map(lambda x: self.data_augmentation(x))
-
-        return batch_x, batch_y
+        if self.augment_data:
+            # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
+            batch_x_aug = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.img_channels), dtype=backend.floatx())
+            plt.figure(figsize=(10, 10))
+            for i in range(batch_x.shape[0]):
+                # Does not work without passing the two seconds arguments
+                batch_x_aug[i] = self.data_augmentation(batch_x[i], {"flip_horizontal": False, "flip_vertical": False})
+                # # Debug, show augmented images
+                # ax = plt.subplot(1, 2, 1)
+                # plt.imshow(batch_x[i].astype("int"))
+                # ax = plt.subplot(1, 2, 2)
+                # plt.imshow(batch_x_aug[i].astype("int"))
+                # plt.axis("off")
+                # plt.show()
+            return batch_x_aug, batch_y
+        else:
+            return batch_x, batch_y
 
     def __len__(self):
         # Denotes the number of batches per epoch

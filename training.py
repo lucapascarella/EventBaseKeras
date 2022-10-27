@@ -110,8 +110,8 @@ def _main(flags: argparse) -> None:
     val_dir = flags.val_dir[:-1] if flags.val_dir.endswith(os.sep) else flags.val_dir
 
     # Generate training data with real-time augmentation
-    train_image_loader = DataGenerator.CustomSequence(train_dir, flags.frame_mode, True, (img_height, img_width), batch_size, True)
-    val_image_loader = DataGenerator.CustomSequence(val_dir, flags.frame_mode, False, (img_height, img_width), batch_size, True)
+    train_image_loader = DataGenerator.CustomSequence(train_dir, flags.frame_mode, True, (img_height, img_width), batch_size, True, True)
+    val_image_loader = DataGenerator.CustomSequence(val_dir, flags.frame_mode, False, (img_height, img_width), batch_size, True, False)
 
     # Create a Keras model
     model = build_model(img_height, img_width, img_channels, 1, flags.model_architecture, flags.model_weights, use_imagenet)
