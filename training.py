@@ -100,7 +100,7 @@ def _main(flags: argparse) -> None:
     img_channels = 3  # Always use 3 channels, even for grayscale that are transformed in RGB later
     batch_size = flags.batch_size
     learn_rate = flags.learning_rate
-    initial_epoch = 0  # Used to restart learning from checkpoint
+    initial_epoch = 0  # Optionally used to restart learning from checkpoint
     epochs = flags.epochs
     checkpoint_path = flags.checkpoints
     use_imagenet = flags.use_imagenet

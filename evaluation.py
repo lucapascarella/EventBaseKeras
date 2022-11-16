@@ -83,7 +83,7 @@ def _main(flags: argparse) -> None:
         steer_gt = gt_std * (maxs - mins) + mins
         # steer_gt = np.expand_dims(gt_steer, axis=-1)
 
-        # Undo transformation for predicitons (only for steering)
+        # Undo transformation for predictIons (only for steering)
         pred_std = (y_mp - min_bound) / (max_bound - min_bound)
         pred_steer = pred_std * (maxs - mins) + mins
         # pred_steer = np.expand_dims(pred_steer, axis = -1)
@@ -94,7 +94,7 @@ def _main(flags: argparse) -> None:
 
         plt.plot(pred_steer)
         plt.plot(steer_gt)
-        plt.title('Steering angle')
+        plt.title('Steering prediction')
         plt.ylabel('Steering angle')
         plt.xlabel('Frame')
         plt.gca().set_ylim([-110, 110])
