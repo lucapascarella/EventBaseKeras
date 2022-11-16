@@ -2,36 +2,34 @@ import cv2
 import numpy as np
 
 
-def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=None):
+def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=None, use_one_channel=False):
     """
     Load an image.
 
     # Arguments
         path: Path to image file.
-        percentiles: some percentiles, in particular the median, an inferior percentil,
-            and a superior percentil for both positive and negative events in order
-            to remove outliers and normalize DVS images. Array containing [pos_median,
-            pos_inf, pos_sup, neg_median, neg_inf, neg_sup].
+        percentiles: some percentiles, in particular the median, an inferior percentile,
+            and a superior percentile for both positive and negative events in order
+            to remove outliers and normalize DVS images.
+            Array containing [pos_median, pos_inf, pos_sup, neg_median, neg_inf, neg_sup].
         target_size: Either `None` (default to original size)
             or tuple of ints `(img_height, img_width)`.
         crop_size: Either `None` (default to original size)
             or tuple of ints `(img_height, img_width)`.
-        dvs: Boolean, whether to load the image as DVS.
 
     # Returns
         Image as numpy array.
     """
 
-    # Read input image
+    # Read the raw input image
     img = cv2.imread(path)
 
     if frame_mode == 'dvs':
-
         # Extract percentiles of interest to normalize between 0 and 1
         pos_sup = percentiles[2]  # Superior percentile for positive events
         neg_sup = percentiles[5]  # Superior percentile for negative events
 
-        if crop_size and (crop_size[0] and crop_size[1]):
+        if crop_size:
             img = image_crop(img, crop_size[0], crop_size[1])
 
         # Extract positive-event image
@@ -44,10 +42,13 @@ def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=Non
         norm_neg_img = neg_events / neg_sup
         norm_neg_img = np.expand_dims(norm_neg_img, axis=-1)
 
-        # input_img = np.concatenate((norm_pos_img, norm_neg_img), axis=-1)
+        # Diff events
+        input_img_diff = (norm_pos_img - norm_neg_img)
 
-        input_img = (norm_pos_img - norm_neg_img)
-        input_img = np.repeat(input_img, 3, axis=2)
+        if use_one_channel:
+            input_img = np.repeat(input_img_diff, 3, axis=2)
+        else:
+            input_img = np.concatenate((norm_pos_img, input_img_diff, norm_neg_img), axis=-1)
 
     elif frame_mode == 'aps':
         if len(img.shape) != 3:
@@ -82,7 +83,7 @@ def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=Non
     return np.asarray(input_img, dtype=np.float32)
 
 
-def image_crop(img, crop_heigth=200, crop_width=346):
+def image_crop(img, crop_height=200, crop_width=346):
     """
     Crop the input image centered in width and starting from the top
     in height to remove the hood and dashboard of the car.
@@ -95,7 +96,31 @@ def image_crop(img, crop_heigth=200, crop_width=346):
         Cropped image.
     """
     half_the_width = int(img.shape[1] / 2)
-    img = img[0:crop_heigth,
-          half_the_width - int(crop_width / 2):
-          half_the_width + int(crop_width / 2)]
+    img = img[0: crop_height, half_the_width - int(crop_width / 2): half_the_width + int(crop_width / 2)]
     return img
+
+
+def save_steering_degrees(img_filename: str, img: np.array, pred_steer: float, real_steer: float, mode: str) -> None:
+    c, r = (100, 100), 65  # center, radius
+    t_offset = 20
+
+    # Draw circle
+    cv2.circle(img, c, r, (255, 255, 255), 1, lineType=cv2.LINE_AA)
+    cv2.line(img, (c[0] - r + 5, c[1]), (c[0] - r, c[1]), (255, 255, 255), 1, lineType=cv2.LINE_AA)
+    cv2.line(img, (c[0] + r - 5, c[1]), (c[0] + r, c[1]), (255, 255, 255), 1, lineType=cv2.LINE_AA)
+    cv2.line(img, (c[0], c[1] - r + 5), (c[0], c[1] - r), (255, 255, 255), 1, lineType=cv2.LINE_AA)
+    cv2.line(img, (c[0], c[1] + r - 5), (c[0], c[1] + r), (255, 255, 255), 1, lineType=cv2.LINE_AA)
+
+    # Draw real steering
+    real_rad = + real_steer / 180. * np.pi + np.pi / 2
+    t = (c[0] + int(np.cos(real_rad) * r), c[1] - int(np.sin(real_rad) * r))
+    cv2.line(img, c, t, (255, 255, 255), 2, lineType=cv2.LINE_AA)
+    cv2.putText(img, 'GT: {:.1f}'.format(real_steer), (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, lineType=cv2.LINE_AA)
+
+    # Draw predicted steering
+    pred_rad = + pred_steer / 180. * np.pi + np.pi / 2
+    t = (c[0] + int(np.cos(pred_rad) * r), c[1] - int(np.sin(pred_rad) * r))
+    cv2.line(img, c, t, (0, 255, 0), 2, lineType=cv2.LINE_AA)
+    cv2.putText(img, '{}: {:.1f}'.format(mode.upper(), pred_steer), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, lineType=cv2.LINE_AA)
+
+    cv2.imwrite(img_filename, img)

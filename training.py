@@ -72,7 +72,7 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
     write_best_model = ModelCheckpoint(filepath=weights_path, monitor='val_loss', save_best_only=True, save_weights_only=True)
 
     # Save training and validation losses
-    loss_filename = os.path.join(checkpoint_path, 'loss_e{}_b{}_p{}.csv'.format(epochs, batch_size, use_imagenet))
+    loss_filename = os.path.join(checkpoint_path, "loss_e{}_b{}_p{}.csv".format(epochs, batch_size, use_imagenet))
     save_model_and_loss = log_utils.MyCallback(loss_filename, batch_size, 0.5)
 
     # Train model
@@ -91,8 +91,11 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
                         initial_epoch=initial_epoch)
 
     # Plot loss
-    plot_filename = os.path.join(checkpoint_path, 'loss_e{}_b{}_p{}.png'.format(epochs, batch_size, use_imagenet))
+    plot_filename = os.path.join(checkpoint_path, "loss_e{}_b{}_p{}.png".format(epochs, batch_size, use_imagenet))
     utils.plot_history(history, plot_filename)
+
+    # Save the whole model (
+    model.save(checkpoint_path + ".model")
 
 
 def _main(flags: argparse) -> None:

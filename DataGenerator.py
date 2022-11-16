@@ -63,6 +63,7 @@ class CustomSequence(Sequence):
         self.is_training = is_training
         self.image_size = image_size
         self.crop_size = image_size
+        self.one_channel = False
         self.img_channels = 3
         self.batch_size = batch_size
         self.seed = seed
@@ -227,7 +228,7 @@ class CustomSequence(Sequence):
         batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
 
         for i, batch_index in enumerate(batch_indexes):
-            batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size)
+            batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.one_channel)
             batch_y[i] = self.input_data[batch_index].future_output
             # print("{:>3}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename,
             #                                     self.input_data[batch_index].actual_steering, self.input_data[batch_index].actual_output))

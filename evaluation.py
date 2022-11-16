@@ -1,8 +1,6 @@
 import argparse
 import json
 import os
-
-import utils
 import DataGenerator
 from unipath import Path
 import numpy as np
@@ -12,6 +10,8 @@ import matplotlib.pyplot as plt
 from keras.models import Model
 from keras import backend
 from keras.models import model_from_json
+
+from img_utils import save_steering_degrees
 
 
 def build_model(model_architecture: str, weights_path: str) -> Model:
@@ -47,6 +47,22 @@ def _main(flags: argparse) -> None:
     y_gt = np.zeros((steps, batch_size), dtype=backend.floatx())
     y_mp = np.zeros((steps, batch_size), dtype=backend.floatx())
 
+    # Create dest img folder
+    img_dir = os.path.join("checkpoints_aps_small", "images")
+    if not os.path.exists(img_dir):
+        os.makedirs(img_dir)
+
+    # Reload normalizer
+    with open(os.path.join(Path(os.path.realpath(flags.test_dir)).parent, 'scaler.json'), 'r') as f:
+        scaler_dict = json.load(f)
+
+        mins = np.array(scaler_dict['mins'])
+        maxs = np.array(scaler_dict['maxs'])
+
+        # Range of the transformed data
+        min_bound = -1.0
+        max_bound = 1.0
+
     for step in range(steps):
         generator_output = test_image_loader.__getitem__(step)
         if isinstance(generator_output, tuple):
@@ -60,51 +76,47 @@ def _main(flags: argparse) -> None:
             raise ValueError('Output not valid for current evaluation')
 
         # Append prediction and ground through
-        y_gt[step] = gt_steer.flatten()
-        y_mp[step] = model.predict_on_batch(x).flatten()
-
-    # Flatten matrix
-    y_gt = y_gt.flatten()
-    y_mp = y_mp.flatten()
-
-    # Steering boundaries seen in data
-    with open(os.path.join(Path(os.path.realpath(flags.test_dir)).parent, 'scaler.json'), 'r') as f:
-        scaler_dict = json.load(f)
-
-        mins = np.array(scaler_dict['mins'])
-        maxs = np.array(scaler_dict['maxs'])
-
-        # Range of the transformed data
-        min_bound = -1.0
-        max_bound = 1.0
+        y_gt_step = np.reshape(gt_steer, (batch_size,))
+        y_mp_step = np.reshape(model.predict_on_batch(x), (batch_size,))
 
         # Undo transformation for ground-truth (only for steering)
-        gt_std = (y_gt - min_bound) / (max_bound - min_bound)
-        steer_gt = gt_std * (maxs - mins) + mins
-        # steer_gt = np.expand_dims(gt_steer, axis=-1)
+        gt_std_step = (y_gt_step - min_bound) / (max_bound - min_bound)
+        y_gt[step] = gt_std_step * (maxs - mins) + mins
 
         # Undo transformation for predictIons (only for steering)
-        pred_std = (y_mp - min_bound) / (max_bound - min_bound)
-        pred_steer = pred_std * (maxs - mins) + mins
-        # pred_steer = np.expand_dims(pred_steer, axis = -1)
+        pred_std_step = (y_mp_step - min_bound) / (max_bound - min_bound)
+        y_mp[step] = pred_std_step * (maxs - mins) + mins
 
-        # Compute random and constant baselines for steerings
-        # random_steerings = random_regression_baseline(steer_gt).ravel()
-        # constant_steerings = constant_baseline(steer_gt).ravel()
+        # Save images with steering overlay
+        for i in range(batch_size):
+            img = x[i]
+            if flags.frame_mode == "dvs":
+                img = img * 256
 
-        plt.plot(pred_steer)
-        plt.plot(steer_gt)
-        plt.title('Steering prediction')
-        plt.ylabel('Steering angle')
-        plt.xlabel('Frame')
-        plt.gca().set_ylim([-110, 110])
-        plt.legend(['Prediction', 'Ground-truth'], loc='upper left')
+            img_filename = os.path.join(img_dir, "steering_{:03d}.png".format(step * batch_size + i))
+            save_steering_degrees(img_filename, img, y_mp[step][i], y_gt[step][i], flags.frame_mode)
 
-        # plt.savefig("steering_prediction.png")
-        plt.show()
+    # Reshape matrix
+    gt_steer = y_gt.flatten()
+    pred_steer = y_mp.flatten()
 
-        # with open(os.path.join(Path(os.path.realpath(flags.test_dir)).parent, 'pred.csv'), 'w') as f:
-        #     pass
+    # Compute random and constant baselines for steerings
+    # random_steerings = random_regression_baseline(steer_gt).ravel()
+    # constant_steerings = constant_baseline(steer_gt).ravel()
+
+    plt.plot(pred_steer)
+    plt.plot(gt_steer)
+    error_steer = np.sqrt(np.square(pred_steer - gt_steer))
+    plt.plot(error_steer)
+
+    plt.title('Steering prediction')
+    plt.ylabel('Steering angle')
+    plt.xlabel('Frame')
+    plt.gca().set_ylim([-110, 110])
+    plt.legend(['Prediction', 'Ground-truth', 'Error'], loc='upper left')
+
+    # plt.savefig("steering_prediction.png")
+    plt.show()
 
 
 if __name__ == '__main__':
