@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import Tuple
 
 import utils
 import log_utils
@@ -16,7 +17,7 @@ from keras.layers import Dense, GlobalAveragePooling2D
 from keras.models import model_from_json
 
 
-def build_model(img_width: int, img_height: int, img_channels: int, output_dim: int, model_architecture: str = None, weights_path: str = None, use_imagenet: bool = True) -> Model:
+def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architecture: str = None, weights_path: str = None, use_imagenet: bool = True) -> Model:
     if model_architecture:
         # Load the model architecture from file
         with open(model_architecture, 'r') as json_file:
@@ -25,7 +26,7 @@ def build_model(img_width: int, img_height: int, img_channels: int, output_dim: 
         # None starts from scratch, 'imagenet' reuses imagenet pre-trained model
         weights = 'imagenet' if use_imagenet else None
 
-        img_input = keras.Input(shape=(img_width, img_height, img_channels))
+        img_input = keras.Input(shape=img_shape)
 
         base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
 
@@ -54,7 +55,7 @@ def build_model(img_width: int, img_height: int, img_channels: int, output_dim: 
 
 
 def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence, val_data_generator: DataGenerator.CustomSequence,
-                batch_size: int, learn_rate: float, initial_epoch: int, epochs: int, checkpoint_path: str, use_imagenet: bool):
+                batch_size: int, learn_rate: float, initial_epoch: int, epochs: int, checkpoint_path: str):
     # Create the checkpoint directory if it does not already exist
     if not os.path.exists(checkpoint_path):
         os.makedirs(checkpoint_path)
@@ -72,7 +73,7 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
     write_best_model = ModelCheckpoint(filepath=weights_path, monitor='val_loss', save_best_only=True, save_weights_only=True)
 
     # Save training and validation losses
-    loss_filename = os.path.join(checkpoint_path, "loss_e{}_b{}_p{}.csv".format(epochs, batch_size, use_imagenet))
+    loss_filename = os.path.join(checkpoint_path, "loss_e{}_b{}.csv".format(epochs, batch_size))
     save_model_and_loss = log_utils.MyCallback(loss_filename, batch_size, 0.5)
 
     # Train model
@@ -91,34 +92,36 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
                         initial_epoch=initial_epoch)
 
     # Plot loss
-    plot_filename = os.path.join(checkpoint_path, "loss_e{}_b{}_p{}.png".format(epochs, batch_size, use_imagenet))
+    plot_filename = os.path.join(checkpoint_path, "loss_e{}_b{}.png".format(epochs, batch_size))
     utils.plot_history(history, plot_filename)
 
-    # Save the whole model (
+    # Save the whole model
     model.save(checkpoint_path + ".model")
 
 
 def _main(flags: argparse) -> None:
-    img_height, img_width = flags.img_height, flags.img_width
-    img_channels = 3  # Always use 3 channels, even for grayscale that are transformed in RGB later
+    # Always use --img_depth 3 (RGB channel format), even for grayscale that are transformed in RGB later
+    img_shape = flags.img_height, flags.img_width, flags.img_depth
     batch_size = flags.batch_size
     learn_rate = flags.learning_rate
     initial_epoch = 0  # Optionally used to restart learning from checkpoint
     epochs = flags.epochs
     checkpoint_path = flags.checkpoints
-    use_imagenet = flags.use_imagenet
+    use_imagenet_pretrain = flags.use_pretrain
+    use_augmentation = flags.use_augmentation
+    dvs_repeat_channels = flags.dvs_repeat
 
     # Remove trailing os separator
     train_dir = flags.train_dir[:-1] if flags.train_dir.endswith(os.sep) else flags.train_dir
     val_dir = flags.val_dir[:-1] if flags.val_dir.endswith(os.sep) else flags.val_dir
 
     # Generate training data with real-time augmentation
-    train_image_loader = DataGenerator.CustomSequence(train_dir, flags.frame_mode, True, (img_height, img_width), batch_size, True, True)
-    val_image_loader = DataGenerator.CustomSequence(val_dir, flags.frame_mode, False, (img_height, img_width), batch_size, True, False)
+    train_image_loader = DataGenerator.CustomSequence(train_dir, flags.frame_mode, True, img_shape, batch_size, True, use_augmentation, dvs_repeat_channels)
+    val_image_loader = DataGenerator.CustomSequence(val_dir, flags.frame_mode, False, img_shape, batch_size, True, False, dvs_repeat_channels)
 
     # Create a Keras model
-    model = build_model(img_height, img_width, img_channels, 1, flags.model_architecture, flags.model_weights, use_imagenet)
-    train_model(model, train_image_loader, val_image_loader, batch_size, learn_rate, initial_epoch, epochs, checkpoint_path, use_imagenet)
+    model = build_model(img_shape, 1, flags.model_architecture, flags.model_weights, use_imagenet_pretrain)
+    train_model(model, train_image_loader, val_image_loader, batch_size, learn_rate, initial_epoch, epochs, checkpoint_path)
 
 
 if __name__ == '__main__':
@@ -127,15 +130,18 @@ if __name__ == '__main__':
     parser.add_argument("-v", "--val_dir", help="Folder containing validation experiments", type=str, default=None)
     parser.add_argument("-c", "--checkpoints", help="Folder in which save checkpoints", type=str, default="checkpoints")
     parser.add_argument("-w", "--model_weights", help="Load the model weights from a HDF5 checkpoint", type=str, default=None)
-    parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
-    parser.add_argument("-r", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
+    parser.add_argument("-m", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
+    parser.add_argument("-s", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=30)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
-    parser.add_argument("-p", '--use_imagenet', help="Load Imagenet pre-trained weights", type=bool, default=True)
-    parser.add_argument("-iw", "--img_width", help="Target Image Width", type=int, default=200)
-    parser.add_argument("-ih", "--img_height", help="Target Image Height", type=int, default=200)
+    parser.add_argument("-p", '--use_pretrain', help="Load Imagenet pre-trained weights", type=bool, default=True)
+    parser.add_argument("-a", '--use_augmentation', help="Augment images while loading", type=bool, default=False)
+    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=bool, default=True)
+    parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
+    parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
+    parser.add_argument("-id", "--img_depth", help="Target image depth", type=int, default=3)
     args = parser.parse_args()
 
     if args.train_dir is None:

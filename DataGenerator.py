@@ -57,18 +57,16 @@ class CustomSequence(Sequence):
                         sync_steering
         """
 
-    def __init__(self, input_dir_data: str, frame_mode: str = 'dvs', is_training: bool = False, image_size: Tuple[int, int] = (224, 224), batch_size: int = 32,
-                 shuffle: bool = True, seed: int = None, follow_links: bool = False, augment_data: bool = False):
+    def __init__(self, input_dir_data: str, frame_mode: str = 'dvs', is_training: bool = False, image_shape: Tuple[int, int, int] = (224, 224, 3), batch_size: int = 32,
+                 shuffle: bool = True, augment_data: bool = False, dvs_repeat_channel: bool = True):
         # Initialization
         self.is_training = is_training
-        self.image_size = image_size
-        self.crop_size = image_size
-        self.one_channel = False
-        self.img_channels = 3
+        self.image_size = image_shape
+        self.crop_size = image_shape
+        self.dvs_repeat_ch = dvs_repeat_channel
         self.batch_size = batch_size
-        self.seed = seed
         self.shuffle = shuffle
-        self.follow_links = follow_links
+        self.follow_links = False
         self.augment_data = augment_data
 
         # Check that the given frame is supported
@@ -224,18 +222,18 @@ class CustomSequence(Sequence):
         # get batch indexes from shuffled indexes
         batch_indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
 
-        batch_x = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.img_channels), dtype=backend.floatx())
+        batch_x = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
         batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
 
         for i, batch_index in enumerate(batch_indexes):
-            batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.one_channel)
+            batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
             batch_y[i] = self.input_data[batch_index].future_output
             # print("{:>3}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename,
             #                                     self.input_data[batch_index].actual_steering, self.input_data[batch_index].actual_output))
 
         if self.augment_data:
             # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
-            batch_x_aug = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.img_channels), dtype=backend.floatx())
+            batch_x_aug = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
             plt.figure(figsize=(10, 10))
             for i in range(batch_x.shape[0]):
                 # Does not work without passing the two seconds arguments

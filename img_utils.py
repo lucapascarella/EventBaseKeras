@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 
-def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=None, use_one_channel=False):
+def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=None, dvs_repeat_channel=True):
     """
     Load an image.
 
@@ -45,22 +45,27 @@ def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=Non
         # Diff events
         input_img_diff = (norm_pos_img - norm_neg_img)
 
-        if use_one_channel:
-            input_img = np.repeat(input_img_diff, 3, axis=2)
+        if target_size[2] == 3:
+            if dvs_repeat_channel:
+                input_img = np.repeat(input_img_diff, 3, axis=2)
+            else:
+                input_img = np.concatenate((norm_pos_img, input_img_diff, norm_neg_img), axis=-1)
         else:
-            input_img = np.concatenate((norm_pos_img, input_img_diff, norm_neg_img), axis=-1)
+            input_img = input_img_diff
 
     elif frame_mode == 'aps':
-        if len(img.shape) != 3:
-            # img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        if len(img.shape) != 3 and target_size[2] == 3:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        elif len(img.shape) == 3 and target_size[2] == 1:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         if crop_size:
             img = image_crop(img, crop_size[0], crop_size[1])
 
         if target_size:
-            if (img.shape[0], img.shape[1]) != target_size:
-                img = cv2.resize(img, target_size)
+            ts = (target_size[0], target_size[1])
+            if (img.shape[0], img.shape[1]) != ts:
+                img = cv2.resize(img, ts)
 
         # input_img = img.reshape((img.shape[0], img.shape[1], 1))
         input_img = img
@@ -73,8 +78,9 @@ def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=Non
             img = image_crop(img, crop_size[0], crop_size[1])
 
         if target_size:
-            if (img.shape[0], img.shape[1]) != target_size:
-                img = cv2.resize(img, target_size)
+            ts = (target_size[0], target_size[1])
+            if (img.shape[0], img.shape[1]) != ts:
+                img = cv2.resize(img, ts)
 
         input_img = (np.log(cv2.cvtColor(img[:, :, -1], cv2.COLOR_GRAY2RGB) + 1e-3) - np.log(cv2.cvtColor(img[:, :, 0], cv2.COLOR_GRAY2RGB) + 1e-3)) / max_diff
         # input_img = (np.log(img[:,:,-1] + 1e-3) - np.log(img[:,:,0] + 1e-3))/max_diff
