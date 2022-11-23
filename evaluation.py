@@ -31,10 +31,10 @@ def build_model(model_architecture: str, weights_path: str) -> Model:
 
 
 def _main(flags: argparse) -> None:
-    img_height, img_width = flags.img_height, flags.img_width
+    img_shape = flags.img_height, flags.img_width, flags.img_depth
     batch_size = flags.batch_size
 
-    test_image_loader = DataGenerator.CustomSequence(flags.test_dir, flags.frame_mode, False, (img_height, img_width), batch_size, False)
+    test_image_loader = DataGenerator.CustomSequence(flags.test_dir, flags.frame_mode, False, img_shape, batch_size, False, False, flags.dvs_repeat)
 
     # Create a Keras model
     model = build_model(flags.model_architecture, flags.model_weights)
@@ -124,11 +124,13 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--test_dir", help="Folder containing testing experiments", type=str, default=None)
     parser.add_argument("-w", "--model_weights", help="Load the model weights from the native Tensorflow .ckpt format", type=str, default=None)
     parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
-    parser.add_argument("-r", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
+    parser.add_argument("-s", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
+    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=bool, default=True)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
+    parser.add_argument("-id", "--img_depth", help="Target image depth", type=int, default=3)
     args = parser.parse_args()
 
     if args.test_dir is None:
