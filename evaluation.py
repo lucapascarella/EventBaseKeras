@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import utils
 import DataGenerator
 from unipath import Path
 import numpy as np
@@ -9,23 +10,28 @@ import matplotlib.pyplot as plt
 
 from keras.models import Model
 from keras import backend
-from keras.models import model_from_json
+from keras.models import model_from_json, load_model
 
 from img_utils import save_steering_degrees
 
 
-def build_model(model_architecture: str, weights_path: str) -> Model:
-    # Load the model architecture from file
-    with open(model_architecture, 'r') as json_file:
-        model = model_from_json(json_file.read())
+def build_model(model_architecture: str, weights_path: str, model_path: str, batch_size: int = None) -> Model:
+    if model_architecture and weights_path:
+        # Load the model architecture from file
+        with open(model_architecture, 'r') as json_file:
+            model = model_from_json(json_file.read())
 
-    # Load a saved checkpoint
-    try:
-        # Tell the model that the checkpoint will be used to inference only
-        model.load_weights(weights_path).expect_partial()
-        print("Loaded weights from {}".format(weights_path))
-    except ImportError or ValueError as e:
-        raise ValueError("Impossible to load weights from file {} due to: {}".format(weights_path, e))
+        # Load a saved checkpoint
+        try:
+            # Tell the model that the checkpoint will be used to inference only
+            model.load_weights(weights_path).expect_partial()
+            print("Loaded weights from {}".format(weights_path))
+        except ImportError or ValueError as e:
+            raise ValueError("Impossible to load weights from file {} due to: {}".format(weights_path, e))
+
+    else:
+        k_mse = tf.Variable(batch_size, trainable=False, name='k_mse', dtype=tf.int32)
+        model = load_model(model_path, custom_objects={'custom_mse': utils.hard_mining_mse(k_mse), 'pred_std': utils.pred_std})
 
     return model
 
@@ -37,9 +43,7 @@ def _main(flags: argparse) -> None:
     test_image_loader = DataGenerator.CustomSequence(flags.test_dir, flags.frame_mode, False, img_shape, batch_size, False, False, flags.dvs_repeat)
 
     # Create a Keras model
-    model = build_model(flags.model_architecture, flags.model_weights)
-    # Compile model
-    model.compile(loss='mse', optimizer='sgd')
+    model = build_model(flags.model_architecture, flags.model_weights, flags.model, batch_size)
 
     steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 40)
 
@@ -124,6 +128,7 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--test_dir", help="Folder containing testing experiments", type=str, default=None)
     parser.add_argument("-w", "--model_weights", help="Load the model weights from the native Tensorflow .ckpt format", type=str, default=None)
     parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
+    parser.add_argument("-m", "--model", help="Load the model from a .model", type=str, default=None)
     parser.add_argument("-s", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
@@ -137,19 +142,15 @@ if __name__ == '__main__':
         print("Missing --test_dir parameter")
         exit(-1)
 
-    if args.model_weights is None:
-        print("Missing --model_weights parameter")
-        exit(-1)
+    # if args.model_weights is None:
+    #     print("Missing --model_weights parameter")
+    #     exit(-1)
 
-    if args.model_architecture is None:
-        print("Missing --model_architecture parameter")
-        exit(-1)
+    # if args.model_architecture is None:
+    #     print("Missing --model_architecture parameter")
+    #     exit(-1)
 
     if args.frame_mode not in ["dvs", "aps", "aps_diff"]:
-        print("A valid --frame_mode must be selected")
-        exit(-1)
-
-    if args.frame_mode is None or args.frame_mode not in ["dvs", "aps", "aps_diff"]:
         print("A valid --frame_mode must be selected")
         exit(-1)
 
