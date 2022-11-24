@@ -65,7 +65,7 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
 
     # Configure training process
     optimizer = keras.optimizers.Adam(learning_rate=learn_rate, decay=1e-4)
-    model.compile(loss=[utils.hard_mining_mse(model.k_mse)], optimizer=optimizer, metrics=['accuracy', utils.pred_std])
+    model.compile(loss=[utils.hard_mining_mse(model.k_mse)], optimizer=optimizer, metrics=[utils.steering_loss, utils.pred_std])
 
     # Save model with the lowest validation loss, use Tensorflow native ckpt to allow easy reload later
     # weights_path = os.path.join(checkpoint_path, 'weights_{epoch:03d}.h5')

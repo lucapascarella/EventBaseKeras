@@ -1,8 +1,11 @@
 import argparse
-import os
+
+import DataGenerator
+import utils
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Tuple, List
+import tensorflow as tf
 from tensorflow import keras
 from keras.datasets import mnist
 from keras.models import Model
@@ -14,6 +17,7 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.layers import Activation
 from keras.utils.generic_utils import get_custom_objects
 from tensorflow.python.keras import backend as kernel
+from keras.models import model_from_json, load_model
 
 
 # custom activation function for keeping adversarial pixel values between 0.0 and 1.0
@@ -138,39 +142,44 @@ def train_model(save_model_dir: str, x_train: np.array, y_train: np.array, x_tes
 
 
 def _main(flags: argparse):
+    img_shape = flags.img_height, flags.img_width, flags.img_depth
+    batch_size = flags.batch_size
+    model_path = flags.model_path
+
+    # First, prepare the input dataset
     x_train, y_train, x_test, y_test = load_mnist()
+    image_loader = DataGenerator.CustomSequence(flags.test_dir, flags.frame_mode, False, img_shape, batch_size, False, False, flags.dvs_repeat)
 
-    # First, train and save the model
-    if flags.training or not os.path.isdir(flags.save_model):
-        train_model(flags.save_model, x_train, y_train, x_test, y_test)
+    # Second, re-load the trained model
+    k_mse = tf.Variable(batch_size, trainable=False, name='k_mse', dtype=tf.int32)
+    target_model = load_model(model_path, custom_objects={'custom_mse': utils.hard_mining_mse(k_mse), 'pred_std': utils.pred_std})
 
-    # Second, re-load the model back
-    mnist_model = keras.models.load_model(flags.save_model)
-
-    # select image to create an adversarial example from
-    img = x_train[0:1]
-    plt.imshow(img.reshape((28, 28)), vmin=0., vmax=1.)
+    # Select image to create an adversarial example from
+    x_batch, gt_steer_batch = image_loader.__getitem__(0)
+    img = x_batch[0:1]
+    gt_steer = gt_steer_batch[0:1]
+    plt.imshow(img.reshape((img_shape[0], img_shape[1])), vmin=0., vmax=1.)
     plt.show()
-    # varify accurate classification
-    prediction = mnist_model.predict(img)[0]
-    print('Prediction: {}'.format(np.argmax(prediction)))
+
+    prediction = target_model.predict(img)[0]
+    print('Prediction: {} <> {}'.format(prediction, gt_steer))
 
     # applying random noise does not fool the classifier
     quantized_noise = np.round(np.random.normal(loc=0.0, scale=0.3, size=img.shape) * 255.) / 255.
     noisy_img = np.clip(img + quantized_noise, 0., 1.)
-    plt.imshow(noisy_img.reshape((28, 28)), vmin=0., vmax=1.)
+    plt.imshow(noisy_img.reshape((img_shape[0], img_shape[1])), vmin=0., vmax=1.)
     plt.show()
-    noisy_prediction = mnist_model.predict(noisy_img)[0]
-    target = np.argmax(noisy_prediction)
-    print('Prediction: {}'.format(target))
+    noisy_prediction = target_model.predict(noisy_img)[0]
+    print('Prediction: {} <> {}'.format(noisy_prediction, gt_steer))
 
     # Non-targeted misclassification image
     regularizations = [l1(0.01), l2(0.01), l1_l2(l1=0.01, l2=0.01)]
+    target = gt_steer
     non_targeted = 5
     generated_images = []
     for regularization in regularizations:
         generated_images.append(generate_adversary(flags.save_model, img, non_targeted, regularization, 'negative_categorical_crossentropy'))
-        adversarial_prediction = mnist_model.predict(generated_images[-1][0].reshape((1, 28, 28, 1)))
+        adversarial_prediction = target_model.predict(generated_images[-1][0].reshape((1, 28, 28, 1)))
         print('Expected {}, predicted: {}'.format(target, np.argmax(adversarial_prediction)))
     show_sub_figs("Non targeted", generated_images)
 
@@ -179,15 +188,19 @@ def _main(flags: argparse):
     generated_images = []
     for regularization in regularizations:
         generated_images.append(generate_adversary(flags.save_model, img, targeted, regularization, 'categorical_crossentropy'))
-        adversarial_prediction = mnist_model.predict(generated_images[-1][0].reshape((1, 28, 28, 1)))
+        adversarial_prediction = target_model.predict(generated_images[-1][0].reshape((1, 28, 28, 1)))
         print('Expected {}, predicted: {}'.format(target, np.argmax(adversarial_prediction)))
     show_sub_figs("Targeted", generated_images)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("-t", "--training", help="Yes for training mode", type=bool, default=False)
-    parser.add_argument("-m", "--save_model", help="Path where to save the model", type=str, default="mnist.model")
+    parser.add_argument("-t", "--test_dir", help="Folder containing testing experiments", type=str, default=None)
+    parser.add_argument("-m", "--model_path", help="Load the model from a .model", type=str, default=None)
+    parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
+    parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
+    parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
+    parser.add_argument("-id", "--img_depth", help="Target image depth", type=int, default=3)
     args = parser.parse_args()
 
     _main(args)
