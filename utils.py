@@ -16,7 +16,7 @@ def pred_std(y_true, y_pred):
 
 def hard_mining_mse(k):
     """
-    Compute MSE for steering evaluation and hard-mining for the current batch.
+    Compute Mean Squared Error (MSE) for steering evaluation and hard-mining for the current batch.
 
     # Arguments
         k: number of samples for hard-mining.

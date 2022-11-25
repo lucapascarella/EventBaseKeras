@@ -31,7 +31,7 @@ def build_model(model_architecture: str, weights_path: str, model_path: str, bat
 
     else:
         k_mse = tf.Variable(batch_size, trainable=False, name='k_mse', dtype=tf.int32)
-        model = load_model(model_path, custom_objects={'custom_mse': utils.hard_mining_mse(k_mse), 'pred_std': utils.pred_std})
+        model = load_model(model_path, custom_objects={'custom_mse': utils.hard_mining_mse(k_mse), 'steering_loss': utils.steering_loss, 'pred_std': utils.pred_std})
 
     return model
 
@@ -45,14 +45,14 @@ def _main(flags: argparse) -> None:
     # Create a Keras model
     model = build_model(flags.model_architecture, flags.model_weights, flags.model, batch_size)
 
-    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 40)
+    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 10)
 
     # Get predictions and ground
     y_gt = np.zeros((steps, batch_size), dtype=backend.floatx())
     y_mp = np.zeros((steps, batch_size), dtype=backend.floatx())
 
     # Create dest img folder
-    img_dir = os.path.join("checkpoints_aps_small", "images")
+    img_dir = os.path.join("evaluation", "images")
     if not os.path.exists(img_dir):
         os.makedirs(img_dir)
 
