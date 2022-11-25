@@ -1,7 +1,8 @@
 import argparse
+import json
 import math
 import os
-
+from unipath import Path
 import DataGenerator
 import utils
 import matplotlib.pyplot as plt
@@ -19,6 +20,9 @@ from keras.layers import Activation
 from keras.utils.generic_utils import get_custom_objects
 from tensorflow.python.keras import backend as kernel
 from keras.models import load_model
+from keras import losses
+
+from img_utils import save_steering_degrees
 
 
 # custom activation function for keeping adversarial pixel values between 0.0 and 1.0
@@ -71,19 +75,19 @@ def generate_adversary(model_path: str, batch_size: int, img: np.array, target: 
     adversarial_model.layers[-1].trainable = False
 
     adversarial_model.compile(optimizer='nadam', loss=loss_function, metrics=[categorical_accuracy])
-    adversarial_model.summary()
+    # adversarial_model.summary()
 
     # target adversarial classification
-    target_vector = np.zeros(1)
+    target_vector = np.asarray(target)
     # target_vector[target] = 1.
-    target_vector[0] = target
+    # target_vector[0] = target
 
     # callback for saving weights with the smallest loss
     tmp_adversarial_filename = "./adversarial_weights.h5"
     os.remove(tmp_adversarial_filename)
     checkpoint = ModelCheckpoint(tmp_adversarial_filename, monitor='loss', verbose=0, save_best_only=True, save_weights_only=True, mode='auto', save_freq=1)
     # train adversarial image
-    adversarial_model.fit(x={'image': img, 'unity': np.ones(shape=(1, 1))}, y=target_vector.reshape(1, -1), epochs=10000, verbose=0, callbacks=[checkpoint])
+    adversarial_model.fit(x={'image': img, 'unity': np.ones(shape=(1, 1))}, y=target_vector.reshape(1, -1), epochs=100, verbose=0, callbacks=[checkpoint])
     # restore best weights
     adversarial_model.load_weights(tmp_adversarial_filename)
 
@@ -111,6 +115,12 @@ def show_sub_figs(title: str, images: List[Tuple[np.array, np.array]]):
     plt.show()
 
 
+def normalize_array(img: np.array, min_bound: float = 0, max_bound: float = 255) -> np.array:
+    val_range = img.max() - img.min()
+    tmp = (img - img.min()) / val_range
+    return tmp * (max_bound - min_bound) + min_bound
+
+
 def _main(flags: argparse):
     img_shape = flags.img_height, flags.img_width, flags.img_depth
     batch_size = flags.batch_size
@@ -126,42 +136,72 @@ def _main(flags: argparse):
     x_batch, gt_steer_batch = image_loader.__getitem__(0)
     img_idx = 105
     img = x_batch[img_idx:img_idx + 1]
-    gt_steer = gt_steer_batch[img_idx:img_idx + 1]
+    gt_steer = np.reshape(gt_steer_batch[img_idx:img_idx + 1], (1,))
     plt.imshow(img.reshape(img_shape), vmin=0., vmax=1.)
     plt.show()
 
-    prediction = target_model.predict(img)[0]
-    print('Expected {}, predicted: {}'.format(gt_steer[0], prediction))
+    # Reload normalizer
+    with open(os.path.join(Path(os.path.realpath(flags.test_dir)).parent, 'scaler.json'), 'r') as f:
+        scaler_dict = json.load(f)
 
-    # applying random noise does not fool the classifier
-    quantized_noise = np.round(np.random.normal(loc=0.0, scale=0.1, size=(img_shape[0], img_shape[1], 1)) * 255.) / 255.
-    quantized_noise = np.repeat(quantized_noise, 3, axis=2)
+        mins = np.array(scaler_dict['mins'])
+        maxs = np.array(scaler_dict['maxs'])
 
-    noisy_img = np.clip(img + quantized_noise, 0., 1.)
-    # noisy_img = img
-    plt.imshow(noisy_img.reshape(img_shape), vmin=0., vmax=1.)
-    plt.show()
-    noisy_prediction = target_model.predict(noisy_img)[0]
-    print('Expected {}, predicted: {}'.format(gt_steer[0], noisy_prediction))
+        # Range of the transformed data
+        min_bound = -1.0
+        max_bound = 1.0
 
-    # Non-targeted misclassification image
-    regularizations = [l1(0.01), l2(0.01), l1_l2(l1=0.01, l2=0.01)]
-    non_targeted = gt_steer
-    generated_images = []
-    for regularization in regularizations:
-        generated_images.append(generate_adversary(model_path, batch_size, img, non_targeted, regularization, 'negative_categorical_crossentropy'))
-        adversarial_prediction = target_model.predict(generated_images[-1][0].reshape((1, 200, 200, 3)))
-        print('Expected {}, predicted: {}'.format(gt_steer, adversarial_prediction))
-    show_sub_figs("Non targeted", generated_images)
+        # Predict
+        prediction = target_model.predict(img)[0]
 
-    # Targeted misclassification image
-    targeted = -gt_steer
-    generated_images = []
-    for regularization in regularizations:
-        generated_images.append(generate_adversary(model_path, batch_size, img, targeted, regularization, 'categorical_crossentropy'))
-        adversarial_prediction = target_model.predict(generated_images[-1][0].reshape((1, 200, 200, 3)))
-        print('Expected {}, predicted: {}'.format(gt_steer, adversarial_prediction))
-    show_sub_figs("Targeted", generated_images)
+        # Undo transformation for ground-truth (only for steering)
+        y_gt = (gt_steer[0] - min_bound) / (max_bound - min_bound) * (maxs - mins) + mins
+        # Undo transformation for predictIons (only for steering)
+        y_mp = (prediction[0] - min_bound) / (max_bound - min_bound) * (maxs - mins) + mins
+        print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
+
+        # applying random noise does not fool the classifier
+        quantized_noise = np.round(np.random.normal(loc=0.0, scale=0.01, size=(img_shape[0], img_shape[1], 1)) * 255.) / 255.
+        quantized_noise = np.repeat(quantized_noise, 3, axis=2)
+
+        noisy_img = np.clip(img + quantized_noise, 0., 1.)
+        # noisy_img = img
+        plt.imshow(noisy_img.reshape(img_shape), vmin=0., vmax=1.)
+        plt.show()
+        noisy_prediction = target_model.predict(noisy_img)[0]
+        # Undo transformation for predictIons (only for steering)
+        y_mp = (noisy_prediction[0] - min_bound) / (max_bound - min_bound) * (maxs - mins) + mins
+        print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
+
+        # Non-targeted misclassification image
+        regularizations = [l1(0.01), l2(0.01), l1_l2(l1=0.01, l2=0.01)]
+        # non_targeted = -gt_steer
+        generated_images = []
+        img_dir = "adversarial_images"
+        for idx, regularization in enumerate(regularizations):
+            generated_images.append(generate_adversary(model_path, batch_size, img, -gt_steer[0], regularization, "mean_squared_error"))
+            flooded_img = generated_images[-1][0]
+            adversarial_prediction = target_model.predict(flooded_img.reshape((1, 200, 200, 3)))[0]
+            # Undo transformation for predictIons (only for steering)
+            y_mp = (adversarial_prediction[0] - min_bound) / (max_bound - min_bound) * (maxs - mins) + mins
+            print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
+
+            if flags.frame_mode == "dvs":
+                flooded_img = normalize_array(flooded_img)
+
+            img_filename = os.path.join(img_dir, "adversarial_{:03d}.png".format(idx))
+            save_steering_degrees(img_filename, flooded_img, y_mp, y_gt, flags.frame_mode)
+
+        show_sub_figs("Non targeted", generated_images)
+
+    # # Targeted misclassification image
+    # targeted = -gt_steer
+    # generated_images = []
+    # for regularization in regularizations:
+    #     generated_images.append(generate_adversary(model_path, batch_size, img, targeted, regularization, 'categorical_crossentropy'))
+    #     adversarial_prediction = target_model.predict(generated_images[-1][0].reshape((1, 200, 200, 3)))
+    #     print('Expected {}, predicted: {}'.format(gt_steer, adversarial_prediction))
+    # show_sub_figs("Targeted", generated_images)
 
 
 if __name__ == '__main__':
