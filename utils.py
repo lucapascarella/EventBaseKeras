@@ -1,6 +1,6 @@
 import tensorflow as tf
 import matplotlib.pyplot as plt
-
+import numpy as np
 from keras import backend
 from keras.callbacks import History
 
@@ -39,6 +39,17 @@ def hard_mining_mse(k):
         return hard_l_steer
 
     return custom_mse
+
+
+def normalize_nparray(data: np.array, min_bound: float, max_bound: float, data_min: float = None, data_max: float = None) -> np.array:
+    if data_min is None:
+        data_min = data.min()
+    if data_max is None:
+        data_max = data.max()
+
+    val_range = data_max - data_min
+    tmp = (data - data_min) / val_range
+    return tmp * (max_bound - min_bound) + min_bound
 
 
 def plot_history(history: History, filename: str = None) -> None:

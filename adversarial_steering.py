@@ -20,7 +20,6 @@ from keras.layers import Activation
 from keras.utils.generic_utils import get_custom_objects
 from tensorflow.python.keras import backend as kernel
 from keras.models import load_model
-from keras import losses
 
 from img_utils import save_steering_degrees
 
@@ -115,10 +114,10 @@ def show_sub_figs(title: str, images: List[Tuple[np.array, np.array]]):
     plt.show()
 
 
-def normalize_array(img: np.array, min_bound: float = 0, max_bound: float = 255) -> np.array:
-    val_range = img.max() - img.min()
-    tmp = (img - img.min()) / val_range
-    return tmp * (max_bound - min_bound) + min_bound
+def get_image_by_index(batch_size: int, img_index: int) -> Tuple[int, int]:
+    img_idx = img_index % batch_size
+    batch_idx = img_index // batch_size
+    return batch_idx, img_idx
 
 
 def _main(flags: argparse):
@@ -133,8 +132,8 @@ def _main(flags: argparse):
     target_model = load_custom_model(model_path, batch_size)
 
     # Select image to create an adversarial example from
-    x_batch, gt_steer_batch = image_loader.__getitem__(0)
-    img_idx = 105
+    batch_idx, img_idx = get_image_by_index(batch_size, 108)
+    x_batch, gt_steer_batch = image_loader.__getitem__(batch_idx)
     img = x_batch[img_idx:img_idx + 1]
     gt_steer = np.reshape(gt_steer_batch[img_idx:img_idx + 1], (1,))
     plt.imshow(img.reshape(img_shape), vmin=0., vmax=1.)
@@ -187,7 +186,7 @@ def _main(flags: argparse):
             print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
 
             if flags.frame_mode == "dvs":
-                flooded_img = normalize_array(flooded_img)
+                flooded_img = utils.normalize_nparray(flooded_img, 0, 255)
 
             img_filename = os.path.join(img_dir, "adversarial_{:03d}.png".format(idx))
             save_steering_degrees(img_filename, flooded_img, y_mp, y_gt, flags.frame_mode)

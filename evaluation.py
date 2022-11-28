@@ -95,7 +95,7 @@ def _main(flags: argparse) -> None:
         for i in range(batch_size):
             img = x[i]
             if flags.frame_mode == "dvs":
-                img = img * 256
+                img = utils.normalize_nparray(img, 0, 255)
 
             img_filename = os.path.join(img_dir, "steering_{:03d}.png".format(step * batch_size + i))
             save_steering_degrees(img_filename, img, y_mp[step][i], y_gt[step][i], flags.frame_mode)

@@ -5,8 +5,6 @@ import json
 import numpy as np
 
 from unipath import Path
-import tensorflow
-from tensorflow import keras
 from keras import backend
 from keras import Sequential
 from keras.utils import Sequence
@@ -14,8 +12,7 @@ from keras.layers import RandomRotation, RandomZoom, RandomTranslation, RandomBr
 from typing import Tuple
 
 import img_utils
-
-import matplotlib.pyplot as plt
+from utils import normalize_nparray
 
 
 class MyInput:
@@ -154,10 +151,18 @@ class CustomSequence(Sequence):
         ])
 
         self.samples = len(self.input_data)
-        print("Selected {} of {} frames for {}".format(self.samples, steering_datapoints, 'training' if is_training else 'validation'))
+        mode = 'training' if self.is_training else 'validation'
+        print("Selected {} of {} frames for {}".format(self.samples, steering_datapoints, mode))
         self.indexes = np.arange(self.samples)
         if self.shuffle:
             np.random.shuffle(self.indexes)
+
+        indexes_csv = os.path.join(Path(input_dir_data).parent, "indexes_{}.csv".format(mode))
+        with open(indexes_csv, 'w') as idx_file:
+            idx_file.write("filename,index,actual_steering,future_steering,actual_output,future_output\n")
+            for idx in self.indexes:
+                myi = self.input_data[idx]
+                idx_file.write("{},{},{},{},{},{}\n".format(myi.filename, idx, myi.actual_steering, myi.future_steering, myi.actual_output, myi.future_output))
 
     def _recursive_list(self, sub_path):
         return sorted(os.walk(sub_path, followlinks=self.follow_links), key=lambda tpl: tpl[0])
@@ -184,7 +189,7 @@ class CustomSequence(Sequence):
             clip_max = np.max(outputs)
 
             # Scaling all values
-            outputs /= np.max(np.abs(outputs), axis=0)
+            outputs = normalize_nparray(outputs, -1, 1)
 
             out_dict = {'means': means.tolist(),
                         'stds': stds.tolist(),
@@ -206,15 +211,11 @@ class CustomSequence(Sequence):
             outputs = np.clip(outputs, means - 3 * stds, means + 3 * stds)
 
             # Scaling of all values
-            mins = np.array(train_dict['mins'])
-            maxs = np.array(train_dict['maxs'])
+            data_min = train_dict['mins']
+            data_max = train_dict['maxs']
 
-            # Range of the transformed data
-            min_bound = -1.0
-            max_bound = 1.0
-
-            outputs = (outputs - mins) / (maxs - mins)
-            outputs = outputs * (max_bound - min_bound) + min_bound
+            # Scaling all values
+            outputs = normalize_nparray(outputs, -1, 1, data_min, data_max)
 
         return outputs
 
@@ -234,7 +235,7 @@ class CustomSequence(Sequence):
         if self.augment_data:
             # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
             batch_x_aug = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
-            plt.figure(figsize=(10, 10))
+            # plt.figure(figsize=(10, 10))
             for i in range(batch_x.shape[0]):
                 # Does not work without passing the two seconds arguments
                 batch_x_aug[i] = self.data_augmentation(batch_x[i], {"flip_horizontal": False, "flip_vertical": False})
