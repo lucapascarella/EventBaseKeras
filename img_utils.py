@@ -45,19 +45,14 @@ def load_img(path, frame_mode, percentiles=None, target_size=None, crop_size=Non
         # Diff events
         input_img_diff = (norm_pos_img - norm_neg_img)
 
-        if target_size[2] == 3:
-            if dvs_repeat_channel:
-                input_img = np.repeat(input_img_diff, 3, axis=2)
-            else:
-                input_img = np.concatenate((norm_pos_img, input_img_diff, norm_neg_img), axis=-1)
+        if dvs_repeat_channel:
+            input_img = np.repeat(input_img_diff, 3, axis=2)
         else:
-            input_img = input_img_diff
+            input_img = np.concatenate((norm_pos_img, input_img_diff, norm_neg_img), axis=-1)
 
     elif frame_mode == 'aps':
-        if len(img.shape) != 3 and target_size[2] == 3:
+        if len(img.shape) != 3:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-        elif len(img.shape) == 3 and target_size[2] == 1:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         if crop_size:
             img = image_crop(img, crop_size[0], crop_size[1])

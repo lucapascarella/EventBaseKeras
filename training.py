@@ -80,7 +80,7 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
     steps_per_epoch = np.minimum(int(np.ceil(train_data_generator.samples / batch_size) - 1), 5000)
     validation_steps = np.minimum(int(np.ceil(val_data_generator.samples / batch_size)) - 1, np.ceil(int(steps_per_epoch / 10)))
 
-    print("Datasets size. Train: {}, validation: {}, batch: {}".format(train_data_generator.samples, val_data_generator.samples, batch_size))
+    print("Training: {}. Validation: {}. Batch: {}".format(train_data_generator.samples, val_data_generator.samples, batch_size))
     print("Training steps per epoch {}".format(steps_per_epoch))
     print("Validation steps per epoch {}".format(validation_steps))
 
@@ -136,9 +136,9 @@ if __name__ == '__main__':
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=30)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
-    parser.add_argument("-p", '--use_pretrain', help="Load Imagenet pre-trained weights", type=bool, default=True)
-    parser.add_argument("-a", '--use_augmentation', help="Augment images while loading", type=bool, default=False)
-    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=bool, default=True)
+    parser.add_argument("-p", '--use_pretrain', help="Load Imagenet pre-trained weights", type=utils.str2bool, default=True)
+    parser.add_argument("-a", '--use_augmentation', help="Augment images while loading", type=utils.str2bool, default=False)
+    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool, default=True)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
     parser.add_argument("-id", "--img_depth", help="Target image depth", type=int, default=3)

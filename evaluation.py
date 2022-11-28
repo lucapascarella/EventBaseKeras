@@ -45,7 +45,7 @@ def _main(flags: argparse) -> None:
     # Create a Keras model
     model = build_model(flags.model_architecture, flags.model_weights, flags.model, batch_size)
 
-    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 10)
+    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 50)
 
     # Get predictions and ground
     y_gt = np.zeros((steps, batch_size), dtype=backend.floatx())
@@ -60,8 +60,8 @@ def _main(flags: argparse) -> None:
     with open(os.path.join(Path(os.path.realpath(flags.test_dir)).parent, 'scaler.json'), 'r') as f:
         scaler_dict = json.load(f)
 
-        mins = np.array(scaler_dict['mins'])
-        maxs = np.array(scaler_dict['maxs'])
+        data_min = scaler_dict['mins']
+        data_max = scaler_dict['maxs']
 
         # Range of the transformed data
         min_bound = -1.0
@@ -84,12 +84,10 @@ def _main(flags: argparse) -> None:
         y_mp_step = np.reshape(model.predict_on_batch(x), (batch_size,))
 
         # Undo transformation for ground-truth (only for steering)
-        gt_std_step = (y_gt_step - min_bound) / (max_bound - min_bound)
-        y_gt[step] = gt_std_step * (maxs - mins) + mins
+        y_gt[step] = utils.normalize_nparray(y_gt_step, data_min, data_max, min_bound, max_bound)
 
         # Undo transformation for predictIons (only for steering)
-        pred_std_step = (y_mp_step - min_bound) / (max_bound - min_bound)
-        y_mp[step] = pred_std_step * (maxs - mins) + mins
+        y_mp[step] = utils.normalize_nparray(y_mp_step, data_min, data_max, min_bound, max_bound)
 
         # Save images with steering overlay
         for i in range(batch_size):
@@ -116,7 +114,7 @@ def _main(flags: argparse) -> None:
     plt.title('Steering prediction')
     plt.ylabel('Steering angle')
     plt.xlabel('Frame')
-    plt.gca().set_ylim([-110, 110])
+    plt.gca().set_ylim([-50, 50])
     plt.legend(['Prediction', 'Ground-truth', 'Error'], loc='upper left')
 
     # plt.savefig("steering_prediction.png")
@@ -132,7 +130,7 @@ if __name__ == '__main__':
     parser.add_argument("-s", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
-    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=bool, default=True)
+    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool, default=True)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
     parser.add_argument("-id", "--img_depth", help="Target image depth", type=int, default=3)

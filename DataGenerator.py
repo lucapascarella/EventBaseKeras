@@ -168,16 +168,6 @@ class CustomSequence(Sequence):
         return sorted(os.walk(sub_path, followlinks=self.follow_links), key=lambda tpl: tpl[0])
 
     def _output_normalization(self, outputs: np.array) -> np.array:
-        """
-        Normalize input array between -1 and 1.
-
-        # Arguments
-            array: input array.
-            directory:
-
-        # Returns
-            array: normalized array.
-        """
         if self.is_training:
             # Get mean and std dev
             means = np.mean(outputs)
@@ -185,21 +175,14 @@ class CustomSequence(Sequence):
             # 3sigma clipping
             outputs = np.clip(outputs, means - 3 * stds, means + 3 * stds)
             # Get min and max before scaling
-            clip_min = np.min(outputs)
-            clip_max = np.max(outputs)
+            data_min = np.min(outputs)
+            data_max = np.max(outputs)
 
-            # Scaling all values
-            outputs = normalize_nparray(outputs, -1, 1)
-
-            out_dict = {'means': means.tolist(),
-                        'stds': stds.tolist(),
-                        'mins': clip_min.tolist(),
-                        'maxs': clip_max.tolist()}
+            out_dict = {'means': means.tolist(), 'stds': stds.tolist(), 'mins': data_min.tolist(), 'maxs': data_max.tolist()}
 
             # Save dictionary for later testing
             with open(self.scaler_json, 'w') as f:
                 json.dump(out_dict, f)
-
         else:
             # Read dictionary
             with open(self.scaler_json, 'r') as f:
@@ -214,10 +197,8 @@ class CustomSequence(Sequence):
             data_min = train_dict['mins']
             data_max = train_dict['maxs']
 
-            # Scaling all values
-            outputs = normalize_nparray(outputs, -1, 1, data_min, data_max)
-
-        return outputs
+        # Scaling all values
+        return normalize_nparray(outputs, -1, 1, data_min, data_max)
 
     def __getitem__(self, index):
         # get batch indexes from shuffled indexes
@@ -229,8 +210,6 @@ class CustomSequence(Sequence):
         for i, batch_index in enumerate(batch_indexes):
             batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
             batch_y[i] = self.input_data[batch_index].future_output
-            # print("{:>3}) File {} {} {}".format(self.input_data[batch_index].frame_number, self.input_data[batch_index].filename,
-            #                                     self.input_data[batch_index].actual_steering, self.input_data[batch_index].actual_output))
 
         if self.augment_data:
             # Emulate ImageDataGenerator => random_transform(x) and standardize(x)

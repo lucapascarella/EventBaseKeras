@@ -208,7 +208,7 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--test_dir", help="Folder containing testing experiments", type=str, default=None)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-m", "--model_path", help="Load the model from a .model", type=str, default=None)
-    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=bool, default=True)
+    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool, default=True)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=128)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
