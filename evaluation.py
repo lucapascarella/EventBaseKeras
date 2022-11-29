@@ -45,7 +45,7 @@ def _main(flags: argparse) -> None:
     # Create a Keras model
     model = build_model(flags.model_architecture, flags.model_weights, flags.model, batch_size)
 
-    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 50)
+    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 10)
 
     # Get predictions and ground
     y_gt = np.zeros((steps, batch_size), dtype=backend.floatx())

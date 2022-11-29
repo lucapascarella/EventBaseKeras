@@ -43,14 +43,15 @@ def hard_mining_mse(k):
     return custom_mse
 
 
-def normalize_nparray(data: np.array, min_bound: float, max_bound: float, data_min: float = None, data_max: float = None) -> np.array:
-    if data_min is None:
-        data_min = data.min()
-    if data_max is None:
-        data_max = data.max()
+def normalize_nparray(data: np.array, min_bound: float, max_bound: float, min_data: float = None, max_data: float = None) -> np.array:
+    # If not passed, find a local data min/max
+    if min_data is None:
+        min_data = data.min()
+    if max_data is None:
+        max_data = data.max()
 
-    val_range = data_max - data_min
-    tmp = (data - data_min) / val_range
+    val_range = max_data - min_data
+    tmp = (data - min_data) / val_range
     return tmp * (max_bound - min_bound) + min_bound
 
 

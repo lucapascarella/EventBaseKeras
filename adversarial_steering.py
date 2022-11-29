@@ -106,10 +106,10 @@ def show_sub_figs(title: str, images: List[Tuple[np.array, np.array]]):
     plt.axis('off')
     for i, img in enumerate(images):
         fig.add_subplot(2, len(images), i + 1)
-        plt.imshow(img[0])
+        plt.imshow(utils.normalize_nparray(img[0], 0, 1))
         plt.axis('off')
-        fig.add_subplot(2, len(images), i + 4)
-        plt.imshow(img[1])
+        fig.add_subplot(2, len(images), i + 1 + len(images))
+        plt.imshow(utils.normalize_nparray(img[1], 0, 1))
         plt.axis('off')
     plt.show()
 
@@ -122,6 +122,7 @@ def get_image_by_index(batch_size: int, img_index: int) -> Tuple[int, int]:
 
 def _main(flags: argparse):
     img_shape = flags.img_height, flags.img_width, flags.img_depth
+    input_shape = 1, *img_shape
     batch_size = flags.batch_size
     model_path = flags.model_path
 
@@ -132,31 +133,35 @@ def _main(flags: argparse):
     target_model = load_custom_model(model_path, batch_size)
 
     # Select image to create an adversarial example from
-    batch_idx, img_idx = get_image_by_index(batch_size, 108)
+    batch_idx, img_idx = get_image_by_index(batch_size, 115)
     x_batch, gt_steer_batch = image_loader.__getitem__(batch_idx)
     img = x_batch[img_idx:img_idx + 1]
     gt_steer = np.reshape(gt_steer_batch[img_idx:img_idx + 1], (1,))
-    plt.imshow(img.reshape(img_shape), vmin=0., vmax=1.)
+
+    # Rescale image of 1./255
+    img = utils.normalize_nparray(img.reshape(img_shape), 0, 1)
+
+    plt.imshow(img)
     plt.show()
 
     # Reload normalizer
     with open(os.path.join(Path(os.path.realpath(flags.test_dir)).parent, 'scaler.json'), 'r') as f:
         scaler_dict = json.load(f)
 
-        mins = np.array(scaler_dict['mins'])
-        maxs = np.array(scaler_dict['maxs'])
+        data_min = scaler_dict['mins']
+        data_max = scaler_dict['maxs']
 
         # Range of the transformed data
         min_bound = -1.0
         max_bound = 1.0
 
         # Predict
-        prediction = target_model.predict(img)[0]
+        prediction = target_model.predict(img.reshape(input_shape))[0]
 
         # Undo transformation for ground-truth (only for steering)
-        y_gt = (gt_steer[0] - min_bound) / (max_bound - min_bound) * (maxs - mins) + mins
+        y_gt = utils.normalize_nparray(gt_steer[0], data_min, data_max, min_bound, max_bound)
         # Undo transformation for predictIons (only for steering)
-        y_mp = (prediction[0] - min_bound) / (max_bound - min_bound) * (maxs - mins) + mins
+        y_mp = utils.normalize_nparray(prediction[0], data_min, data_max, min_bound, max_bound)
         print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
 
         # applying random noise does not fool the classifier
@@ -169,7 +174,7 @@ def _main(flags: argparse):
         plt.show()
         noisy_prediction = target_model.predict(noisy_img)[0]
         # Undo transformation for predictIons (only for steering)
-        y_mp = (noisy_prediction[0] - min_bound) / (max_bound - min_bound) * (maxs - mins) + mins
+        y_mp = utils.normalize_nparray(noisy_prediction[0], data_min, data_max, min_bound, max_bound)
         print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
 
         # Non-targeted misclassification image
@@ -182,7 +187,7 @@ def _main(flags: argparse):
             flooded_img = generated_images[-1][0]
             adversarial_prediction = target_model.predict(flooded_img.reshape((1, 200, 200, 3)))[0]
             # Undo transformation for predictIons (only for steering)
-            y_mp = (adversarial_prediction[0] - min_bound) / (max_bound - min_bound) * (maxs - mins) + mins
+            y_mp = utils.normalize_nparray(adversarial_prediction[0], data_min, data_max, min_bound, max_bound)
             print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
 
             if flags.frame_mode == "dvs":

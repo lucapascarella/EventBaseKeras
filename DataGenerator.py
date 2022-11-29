@@ -3,6 +3,7 @@ import re
 import json
 
 import numpy as np
+from keras_preprocessing.image import ImageDataGenerator
 
 from unipath import Path
 from keras import backend
@@ -74,12 +75,23 @@ class CustomSequence(Sequence):
         self.scaler_json = os.path.join(Path(input_dir_data).parent, 'scaler.json')
 
         if self.frame_mode == 'dvs':
+            self.datagen = ImageDataGenerator()
             percentile_filename = os.path.join(Path(input_dir_data).parent, 'percentiles.txt')
             try:
                 self.event_percentiles = np.loadtxt(percentile_filename, usecols=0, skiprows=1)
             except IOError:
                 raise IOError("Percentile file {} not found".format(percentile_filename))
+        elif self.frame_mode == 'aps':
+            if is_training:
+                self.datagen = ImageDataGenerator(rotation_range=0.2, rescale=1. / 255, width_shift_range=0.2, height_shift_range=0.2)
+            else:
+                self.datagen = ImageDataGenerator(rescale=1. / 255)
+            self.event_percentiles = None
         else:
+            if is_training:
+                self.datagen = ImageDataGenerator(rotation_range=0.2, width_shift_range=0.2, height_shift_range=0.2)
+            else:
+                self.datagen = ImageDataGenerator()
             self.event_percentiles = None
 
         # Get a list of input data folders
@@ -208,7 +220,8 @@ class CustomSequence(Sequence):
         batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
 
         for i, batch_index in enumerate(batch_indexes):
-            batch_x[i] = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
+            x = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
+            batch_x[i] = self.datagen.standardize(self.datagen.random_transform(x))
             batch_y[i] = self.input_data[batch_index].future_output
 
         if self.augment_data:
@@ -218,13 +231,6 @@ class CustomSequence(Sequence):
             for i in range(batch_x.shape[0]):
                 # Does not work without passing the two seconds arguments
                 batch_x_aug[i] = self.data_augmentation(batch_x[i], {"flip_horizontal": False, "flip_vertical": False})
-                # # Debug, show augmented images
-                # ax = plt.subplot(1, 2, 1)
-                # plt.imshow(batch_x[i].astype("int"))
-                # ax = plt.subplot(1, 2, 2)
-                # plt.imshow(batch_x_aug[i].astype("int"))
-                # plt.axis("off")
-                # plt.show()
             return batch_x_aug, batch_y
         else:
             return batch_x, batch_y
