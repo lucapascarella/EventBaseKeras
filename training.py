@@ -89,7 +89,8 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
                         callbacks=[write_best_model, save_model_and_loss],
                         validation_data=val_data_generator,
                         validation_steps=validation_steps,
-                        initial_epoch=initial_epoch)
+                        initial_epoch=initial_epoch,
+                        workers=4)
 
     # Plot loss
     plot_filename = os.path.join(checkpoint_path, "loss_e{}_b{}.png".format(epochs, batch_size))

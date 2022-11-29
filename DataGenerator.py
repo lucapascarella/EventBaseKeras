@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import json
@@ -10,8 +11,8 @@ from keras import backend
 from keras import Sequential
 from keras.utils import Sequence
 from keras.layers import RandomRotation, RandomZoom, RandomTranslation, RandomBrightness
-from typing import Tuple
-
+from typing import Tuple, List
+import concurrent.futures
 import img_utils
 from utils import normalize_nparray
 
@@ -212,6 +213,12 @@ class CustomSequence(Sequence):
         # Scaling all values
         return normalize_nparray(outputs, -1, 1, data_min, data_max)
 
+    def read_batch(self, batch_x: np.array, batch_y: np.array, batch_offset: int, batch_indexes: List[int]):
+        for i, batch_index in enumerate(batch_indexes):
+            x = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
+            batch_x[batch_offset * len(batch_indexes) + i] = self.datagen.standardize(self.datagen.random_transform(x))
+            batch_y[batch_offset * len(batch_indexes) + i] = self.input_data[batch_index].future_output
+
     def __getitem__(self, index):
         # get batch indexes from shuffled indexes
         batch_indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
@@ -219,10 +226,21 @@ class CustomSequence(Sequence):
         batch_x = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
         batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
 
-        for i, batch_index in enumerate(batch_indexes):
-            x = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
-            batch_x[i] = self.datagen.standardize(self.datagen.random_transform(x))
-            batch_y[i] = self.input_data[batch_index].future_output
+        number_of_workers = 4
+        chunks = self.split_in_chunks(batch_indexes, number_of_workers)
+
+        # for idx, chunk in enumerate(chunks):
+        #     self.read_batch(batch_x, batch_y, idx, chunk)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(chunks)) as executor:
+            jobs = {executor.submit(self.read_batch, batch_x, batch_y, idx, chunk): chunk for idx, chunk in enumerate(chunks)}
+            for future in concurrent.futures.as_completed(jobs):
+                future.result()
+
+        # for i, batch_index in enumerate(batch_indexes):
+        #     x = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
+        #     batch_x[i] = self.datagen.standardize(self.datagen.random_transform(x))
+        #     batch_y[i] = self.input_data[batch_index].future_output
 
         if self.augment_data:
             # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
@@ -238,6 +256,14 @@ class CustomSequence(Sequence):
     def __len__(self):
         # Denotes the number of batches per epoch
         return self.samples // self.batch_size
+
+    def split_in_chunks(self, full_list: List[int], num_workers: int) -> List[List[int]]:
+        num_chunks = math.ceil(len(full_list) / num_workers)
+        chunks = []
+        for i in range(0, len(full_list), num_chunks):
+            chunks.append(full_list[i:i + num_chunks])
+
+        return chunks
 
     def on_epoch_end(self):
         # Updates indexes after each epoch

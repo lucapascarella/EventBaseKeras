@@ -8,7 +8,7 @@ FRAME_MODES="aps dvs"
 EPOCHS=50
 BATCH_SIZE=64
 
-TRAIN_DIR="frames/training/"
+TRAIN_DIR="/home/luca/remote/data_50ms/training/"
 VAL_DIR="frames/testing/"
 
 COND="True False"
