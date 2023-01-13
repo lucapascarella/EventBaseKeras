@@ -69,8 +69,8 @@ class CustomSequence(Sequence):
         self.augment_data = augment_data
 
         # Check that the given frame is supported
-        if frame_mode not in {'dvs', 'aps', 'aps_diff'}:
-            raise ValueError('Invalid frame mode:', frame_mode, '; expected "dvs", "aps", or "aps_diff".')
+        if frame_mode not in {'dvs', 'aps', 'aps_diff', 'cmb'}:
+            raise ValueError('Invalid frame mode:', frame_mode, '; expected "dvs", "aps", "aps_diff", or "cmb"')
         self.frame_mode = frame_mode
 
         self.scaler_json = os.path.join(Path(input_dir_data).parent, 'scaler.json')
@@ -88,7 +88,13 @@ class CustomSequence(Sequence):
             else:
                 self.datagen = ImageDataGenerator(rescale=1. / 255)
             self.event_percentiles = None
-        else:
+        elif self.frame_mode == 'cmb':
+            if is_training:
+                self.datagen = ImageDataGenerator(rotation_range=0.2, rescale=1. / 255, width_shift_range=0.2, height_shift_range=0.2)
+            else:
+                self.datagen = ImageDataGenerator(rescale=1. / 255)
+            self.event_percentiles = None
+        else:  # 'aps_diff'
             if is_training:
                 self.datagen = ImageDataGenerator(rotation_range=0.2, width_shift_range=0.2, height_shift_range=0.2)
             else:
@@ -119,7 +125,9 @@ class CustomSequence(Sequence):
                     sorted_files = sorted(unsorted_files, key=lambda fil: int(re.search(r'_(\d+)\.png', fil).group(1)))
 
                     # Be sure no other files other than PNGs are in the given sub folder
-                    if steering.shape[0] == len(sorted_files):
+                    # In APS and DVS frame mode (steering.shape[0] - len(sorted_files) == 0); The number of image in the folder matches the steering datapoints
+                    # In APS_DIFF (steering.shape[0] - len(sorted_files) == 1); To get the img-diff we removed an image, therefore, we have more steering points than images
+                    if steering.shape[0] - len(sorted_files) < 2:
                         for index, filename in enumerate(sorted_files):
                             offset = 6  # This is more or less 1/3s in the future!
                             if index + offset < steering.shape[0]:
@@ -227,20 +235,19 @@ class CustomSequence(Sequence):
         batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
 
         number_of_workers = 4
-        chunks = self.split_in_chunks(batch_indexes, number_of_workers)
 
-        # for idx, chunk in enumerate(chunks):
-        #     self.read_batch(batch_x, batch_y, idx, chunk)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(chunks)) as executor:
-            jobs = {executor.submit(self.read_batch, batch_x, batch_y, idx, chunk): chunk for idx, chunk in enumerate(chunks)}
-            for future in concurrent.futures.as_completed(jobs):
-                future.result()
-
-        # for i, batch_index in enumerate(batch_indexes):
-        #     x = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
-        #     batch_x[i] = self.datagen.standardize(self.datagen.random_transform(x))
-        #     batch_y[i] = self.input_data[batch_index].future_output
+        if number_of_workers > 1:
+            chunks = self.split_in_chunks(batch_indexes, number_of_workers)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(chunks)) as executor:
+                jobs = {executor.submit(self.read_batch, batch_x, batch_y, idx, chunk): chunk for idx, chunk in enumerate(chunks)}
+                for future in concurrent.futures.as_completed(jobs):
+                    future.result()
+        else:
+            self.read_batch(batch_x, batch_y, 0, batch_indexes)
+            # for i, batch_index in enumerate(batch_indexes):
+            #     x = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
+            #     batch_x[i] = self.datagen.standardize(self.datagen.random_transform(x))
+            #     batch_y[i] = self.input_data[batch_index].future_output
 
         if self.augment_data:
             # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
@@ -257,7 +264,8 @@ class CustomSequence(Sequence):
         # Denotes the number of batches per epoch
         return self.samples // self.batch_size
 
-    def split_in_chunks(self, full_list: List[int], num_workers: int) -> List[List[int]]:
+    @staticmethod
+    def split_in_chunks(full_list: List[int], num_workers: int) -> List[List[int]]:
         num_chunks = math.ceil(len(full_list) / num_workers)
         chunks = []
         for i in range(0, len(full_list), num_chunks):

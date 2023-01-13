@@ -17,11 +17,11 @@ from keras.metrics import categorical_accuracy
 from keras.regularizers import l1_l2, l2, l1
 from keras.callbacks import ModelCheckpoint
 from keras.layers import Activation
-from keras.utils.generic_utils import get_custom_objects
+# from keras.utils.generic_utils import get_custom_objects
 from tensorflow.python.keras import backend as kernel
 from keras.models import load_model
 
-from img_utils import save_steering_degrees
+from img_utils import save_steering_degrees, save_image
 
 
 # custom activation function for keeping adversarial pixel values between 0.0 and 1.0
@@ -35,8 +35,8 @@ def negative_categorical_crossentropy(y_true, y_pred):
 
 
 # add custom objects to dictionary
-get_custom_objects().update({'clip': Activation(clip)})
-get_custom_objects().update({'negative_categorical_crossentropy': negative_categorical_crossentropy})
+keras.utils.get_custom_objects().update({'clip': Activation(clip)})
+keras.utils.get_custom_objects().update({'negative_categorical_crossentropy': negative_categorical_crossentropy})
 
 
 def load_custom_model(model_path: str, batch_size: int) -> Model:
@@ -83,15 +83,18 @@ def generate_adversary(model_path: str, batch_size: int, img: np.array, target: 
 
     # callback for saving weights with the smallest loss
     tmp_adversarial_filename = "./adversarial_weights.h5"
-    os.remove(tmp_adversarial_filename)
+    if os.path.exists(tmp_adversarial_filename):
+        os.remove(tmp_adversarial_filename)
     checkpoint = ModelCheckpoint(tmp_adversarial_filename, monitor='loss', verbose=0, save_best_only=True, save_weights_only=True, mode='auto', save_freq=1)
     # train adversarial image
-    adversarial_model.fit(x={'image': img, 'unity': np.ones(shape=(1, 1))}, y=target_vector.reshape(1, -1), epochs=100, verbose=0, callbacks=[checkpoint])
+    tt = target_vector.reshape(1, -1)
+    adversarial_model.fit(x={'image': img, 'unity': np.ones(shape=(1, 1))}, y=tt, epochs=10000, verbose=0, callbacks=[checkpoint])
     # restore best weights
     adversarial_model.load_weights(tmp_adversarial_filename)
 
     # quantize adversarial noise
     weights = adversarial_model.get_weights()
+    adv_weights = adversarial_model.get_layer('adversarial_noise').get_weights()[0].reshape(img_shape)
     quantized_weights = np.round(weights[0].reshape(img_shape) * 255.) / 255.
 
     # add trained weights to original image and clip values to produce adversarial image
@@ -123,8 +126,9 @@ def get_image_by_index(batch_size: int, img_index: int) -> Tuple[int, int]:
 def _main(flags: argparse):
     img_shape = flags.img_height, flags.img_width, flags.img_depth
     input_shape = 1, *img_shape
-    batch_size = flags.batch_size
+    batch_size = 32
     model_path = flags.model_path
+    img_index = flags.img_index
 
     # First, prepare the input dataset
     image_loader = DataGenerator.CustomSequence(flags.test_dir, flags.frame_mode, False, img_shape, batch_size, False, False, flags.dvs_repeat)
@@ -133,16 +137,16 @@ def _main(flags: argparse):
     target_model = load_custom_model(model_path, batch_size)
 
     # Select image to create an adversarial example from
-    batch_idx, img_idx = get_image_by_index(batch_size, 115)
+    batch_idx, batch_img_idx = get_image_by_index(batch_size, img_index)
     x_batch, gt_steer_batch = image_loader.__getitem__(batch_idx)
-    img = x_batch[img_idx:img_idx + 1]
-    gt_steer = np.reshape(gt_steer_batch[img_idx:img_idx + 1], (1,))
+    img = x_batch[batch_img_idx:batch_img_idx + 1]
+    gt_steer = np.reshape(gt_steer_batch[batch_img_idx:batch_img_idx + 1], (1,))
 
     # Rescale image of 1./255
     img = utils.normalize_nparray(img.reshape(img_shape), 0, 1)
 
-    plt.imshow(img)
-    plt.show()
+    # plt.imshow(img)
+    # plt.show()
 
     # Reload normalizer
     with open(os.path.join(Path(os.path.realpath(flags.test_dir)).parent, 'scaler.json'), 'r') as f:
@@ -154,6 +158,13 @@ def _main(flags: argparse):
         # Range of the transformed data
         min_bound = -1.0
         max_bound = 1.0
+
+        img_dir = "adversarial_images"
+        if not os.path.exists(img_dir):
+            os.mkdir(img_dir)
+        img_dir = os.path.join(img_dir, "img_{}_batch_{:03d}_{:02d}_idx_{:04d}".format(flags.frame_mode, batch_idx, batch_img_idx, img_index))
+        if not os.path.exists(img_dir):
+            os.mkdir(img_dir)
 
         # Predict
         prediction = target_model.predict(img.reshape(input_shape))[0]
@@ -169,34 +180,35 @@ def _main(flags: argparse):
         quantized_noise = np.repeat(quantized_noise, 3, axis=2)
 
         noisy_img = np.clip(img + quantized_noise, 0., 1.)
-        # noisy_img = img
-        plt.imshow(noisy_img.reshape(img_shape), vmin=0., vmax=1.)
-        plt.show()
-        noisy_prediction = target_model.predict(noisy_img)[0]
+        # plt.imshow(noisy_img.reshape(img_shape), vmin=0., vmax=1.)
+        # plt.show()
+        noisy_prediction = target_model.predict(noisy_img.reshape(input_shape))[0]
         # Undo transformation for predictIons (only for steering)
         y_mp = utils.normalize_nparray(noisy_prediction[0], data_min, data_max, min_bound, max_bound)
         print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
+        save_steering_degrees(os.path.join(img_dir, "random_img.png"), utils.normalize_nparray(noisy_img, 0, 255), y_mp, y_gt, flags.frame_mode)
+        save_image(os.path.join(img_dir, "random_noise.png"), utils.normalize_nparray(quantized_noise, 0, 255))
 
         # Non-targeted misclassification image
         regularizations = [l1(0.01), l2(0.01), l1_l2(l1=0.01, l2=0.01)]
+        regularization_names = ["l1", "l2", "l1l2"]
         # non_targeted = -gt_steer
         generated_images = []
-        img_dir = "adversarial_images"
+
         for idx, regularization in enumerate(regularizations):
-            generated_images.append(generate_adversary(model_path, batch_size, img, -gt_steer[0], regularization, "mean_squared_error"))
-            flooded_img = generated_images[-1][0]
-            adversarial_prediction = target_model.predict(flooded_img.reshape((1, 200, 200, 3)))[0]
+            generated_images.append(generate_adversary(model_path, batch_size, img.reshape(input_shape), -gt_steer[0], regularization, "mean_squared_error"))
+            foolish_img = generated_images[-1][0]
+            adversarial_prediction = target_model.predict(foolish_img.reshape((1, 200, 200, 3)))[0]
             # Undo transformation for predictIons (only for steering)
             y_mp = utils.normalize_nparray(adversarial_prediction[0], data_min, data_max, min_bound, max_bound)
             print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
 
-            if flags.frame_mode == "dvs":
-                flooded_img = utils.normalize_nparray(flooded_img, 0, 255)
+            img_filename = os.path.join(img_dir, "adv_img_{}.png".format(regularization_names[idx]))
+            save_steering_degrees(img_filename, utils.normalize_nparray(foolish_img, 0, 255), y_mp, y_gt, flags.frame_mode)
+            noise_filename = os.path.join(img_dir, "adv_noise_{}.png".format(regularization_names[idx]))
+            save_image(noise_filename, utils.normalize_nparray(generated_images[-1][1], 0, 255))
 
-            img_filename = os.path.join(img_dir, "adversarial_{:03d}.png".format(idx))
-            save_steering_degrees(img_filename, flooded_img, y_mp, y_gt, flags.frame_mode)
-
-        show_sub_figs("Non targeted", generated_images)
+        # show_sub_figs("Non targeted", generated_images)
 
     # # Targeted misclassification image
     # targeted = -gt_steer
@@ -214,7 +226,8 @@ if __name__ == '__main__':
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-m", "--model_path", help="Load the model from a .model", type=str, default=None)
     parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool, default=True)
-    parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=128)
+    # parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=128)
+    parser.add_argument("-i", "--img_index", help="Image index", type=int, default=116)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
     parser.add_argument("-id", "--img_depth", help="Target image depth", type=int, default=3)

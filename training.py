@@ -56,10 +56,6 @@ def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architec
 
 def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence, val_data_generator: DataGenerator.CustomSequence,
                 batch_size: int, learn_rate: float, initial_epoch: int, epochs: int, checkpoint_path: str):
-    # Create the checkpoint directory if it does not already exist
-    if not os.path.exists(checkpoint_path):
-        os.makedirs(checkpoint_path)
-
     # Initialize number of samples for hard-mining
     model.k_mse = tf.Variable(batch_size, trainable=False, name='k_mse', dtype=tf.int32)
 
@@ -69,11 +65,11 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
 
     # Save model with the lowest validation loss, use Tensorflow native ckpt to allow easy reload later
     # weights_path = os.path.join(checkpoint_path, 'weights_{epoch:03d}.h5')
-    weights_path = os.path.join(checkpoint_path, 'weights_{epoch:03d}.ckpt')
+    weights_path = os.path.join(checkpoint_path, "weights_{epoch:03d}.ckpt")
     write_best_model = ModelCheckpoint(filepath=weights_path, monitor='val_loss', save_best_only=True, save_weights_only=True)
 
     # Save training and validation losses
-    loss_filename = os.path.join(checkpoint_path, "loss_e{}_b{}.csv".format(epochs, batch_size))
+    loss_filename = os.path.join(checkpoint_path, "loss.csv")
     save_model_and_loss = log_utils.MyCallback(loss_filename, batch_size, 0.5)
 
     # Train model
@@ -93,14 +89,15 @@ def train_model(model: Model, train_data_generator: DataGenerator.CustomSequence
                         workers=4)
 
     # Plot loss
-    plot_filename = os.path.join(checkpoint_path, "loss_e{}_b{}.png".format(epochs, batch_size))
+    plot_filename = os.path.join(checkpoint_path, "loss.png")
     utils.plot_history(history, plot_filename)
 
     # Save the whole model
-    model.save(checkpoint_path + ".model")
+    model.save(os.path.join(checkpoint_path, "model.model"))
 
 
 def _main(flags: argparse) -> None:
+    frame_mode = flags.frame_mode
     # Always use --img_depth 3 (RGB channel format), even for grayscale that are transformed in RGB later
     img_shape = flags.img_height, flags.img_width, flags.img_depth
     batch_size = flags.batch_size
@@ -117,8 +114,22 @@ def _main(flags: argparse) -> None:
     val_dir = flags.val_dir[:-1] if flags.val_dir.endswith(os.sep) else flags.val_dir
 
     # Generate training data with real-time augmentation
-    train_image_loader = DataGenerator.CustomSequence(train_dir, flags.frame_mode, True, img_shape, batch_size, True, use_augmentation, dvs_repeat_channels)
-    val_image_loader = DataGenerator.CustomSequence(val_dir, flags.frame_mode, False, img_shape, batch_size, True, False, dvs_repeat_channels)
+    train_image_loader = DataGenerator.CustomSequence(train_dir, frame_mode, True, img_shape, batch_size, True, use_augmentation, dvs_repeat_channels)
+    val_image_loader = DataGenerator.CustomSequence(val_dir, frame_mode, False, img_shape, batch_size, True, False, dvs_repeat_channels)
+
+    # Create the checkpoint directory if it does not already exist
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path)
+    # Create the sub checkpoint directory if it does not already exist
+    checkpoint_path = os.path.join(checkpoint_path, "epochs_{}_batch_{}_{}".format(epochs, batch_size, frame_mode))
+    if use_imagenet_pretrain:
+        checkpoint_path += "_imgnet"
+    if use_augmentation:
+        checkpoint_path += "_aug"
+    if dvs_repeat_channels:
+        checkpoint_path += "_dvsrpt"
+    if not os.path.exists(checkpoint_path):
+        os.makedirs(checkpoint_path)
 
     # Create a Keras model
     model = build_model(img_shape, 1, flags.model_architecture, flags.model_weights, use_imagenet_pretrain)
@@ -133,7 +144,7 @@ if __name__ == '__main__':
     parser.add_argument("-w", "--model_weights", help="Load the model weights from a HDF5 checkpoint", type=str, default=None)
     parser.add_argument("-m", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
     parser.add_argument("-s", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
-    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
+    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps, aps_diff, or cmb", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=30)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
@@ -161,7 +172,7 @@ if __name__ == '__main__':
         print("--train_dir {} is empty".format(args.train_dir))
         exit(-1)
 
-    if args.frame_mode is None or args.frame_mode not in ["dvs", "aps", "aps_diff"]:
+    if args.frame_mode is None or args.frame_mode not in ["dvs", "aps", "aps_diff", "cmb"]:
         print("A valid --frame_mode must be selected")
         exit(-1)
 

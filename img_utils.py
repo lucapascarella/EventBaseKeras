@@ -125,3 +125,7 @@ def save_steering_degrees(img_filename: str, img: np.array, pred_steer: float, r
     cv2.putText(img, '{}: {:.1f}'.format(mode.upper(), pred_steer), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, lineType=cv2.LINE_AA)
 
     cv2.imwrite(img_filename, img)
+
+
+def save_image(img_filename: str, img: np.array) -> None:
+    cv2.imwrite(img_filename, img)

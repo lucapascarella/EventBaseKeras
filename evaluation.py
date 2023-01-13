@@ -52,7 +52,7 @@ def _main(flags: argparse) -> None:
     y_mp = np.zeros((steps, batch_size), dtype=backend.floatx())
 
     # Create dest img folder
-    img_dir = os.path.join("evaluation", "images")
+    img_dir = os.path.join("evaluation", "images_{}".format(flags.frame_mode))
     if not os.path.exists(img_dir):
         os.makedirs(img_dir)
 
@@ -91,12 +91,8 @@ def _main(flags: argparse) -> None:
 
         # Save images with steering overlay
         for i in range(batch_size):
-            img = x[i]
-            if flags.frame_mode == "dvs":
-                img = utils.normalize_nparray(img, 0, 255)
-
             img_filename = os.path.join(img_dir, "steering_{:03d}.png".format(step * batch_size + i))
-            save_steering_degrees(img_filename, img, y_mp[step][i], y_gt[step][i], flags.frame_mode)
+            save_steering_degrees(img_filename, utils.normalize_nparray(x[i], 0, 255), y_mp[step][i], y_gt[step][i], flags.frame_mode)
 
     # Reshape matrix
     gt_steer = y_gt.flatten()
@@ -109,16 +105,16 @@ def _main(flags: argparse) -> None:
     plt.plot(pred_steer)
     plt.plot(gt_steer)
     error_steer = np.sqrt(np.square(pred_steer - gt_steer))
-    plt.plot(error_steer)
+    # plt.plot(error_steer)
 
-    plt.title('Steering prediction')
+    plt.title('Steering prediction {}'.format(flags.frame_mode.upper()))
     plt.ylabel('Steering angle')
     plt.xlabel('Frame')
     plt.gca().set_ylim([-50, 50])
-    plt.legend(['Prediction', 'Ground-truth', 'Error'], loc='upper left')
+    plt.legend(['Prediction', 'Ground-truth'], loc='upper left')
 
-    # plt.savefig("steering_prediction.png")
-    plt.show()
+    plt.savefig("steering_prediction_{}.pdf".format(flags.frame_mode))
+    # plt.show()
 
 
 if __name__ == '__main__':
