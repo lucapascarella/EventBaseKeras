@@ -13,11 +13,11 @@ from tensorflow import keras
 from keras.models import Model
 from keras.callbacks import ModelCheckpoint
 from keras.applications import ResNet50
-from keras.layers import Dense, GlobalAveragePooling2D
+from keras.layers import Dense, GlobalAveragePooling2D, Concatenate
 from keras.models import model_from_json
 
 
-def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architecture: str = None, weights_path: str = None, use_imagenet: bool = True) -> Model:
+def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architecture: str, weights_path: str, use_imagenet: bool, frame_mode: str) -> Model:
     if model_architecture:
         # Load the model architecture from file
         with open(model_architecture, 'r') as json_file:
@@ -26,18 +26,42 @@ def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architec
         # None starts from scratch, 'imagenet' reuses imagenet pre-trained model
         weights = 'imagenet' if use_imagenet else None
 
-        img_input = keras.Input(shape=img_shape)
+        if frame_mode == 'cmb':
+            # Combine two inputs, aps and dvs images
+            img_input_aps = keras.Input(shape=img_shape)
+            base_model_aps = ResNet50(input_tensor=img_input_aps, weights=weights, include_top=False)
+            x_aps = GlobalAveragePooling2D()(base_model_aps.output)
+            for layer in base_model_aps.layers:
+                layer._name = layer.name + str("_aps")
 
-        base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
+            img_input_dvs = keras.Input(shape=img_shape)
+            base_model_dvs = ResNet50(input_tensor=img_input_dvs, weights=weights, include_top=False)
+            x_dvs = GlobalAveragePooling2D()(base_model_dvs.output)
+            for layer in base_model_dvs.layers:
+                layer._name = layer.name + str("_dvs")
 
-        x = GlobalAveragePooling2D()(base_model.output)
-        x = Dense(1024, activation='relu')(x)
+            x = Concatenate(axis=1)([x_aps, x_dvs])
+            x = Dense(1024, activation='relu')(x)
 
-        # Steering prediction
-        output = Dense(output_dim)(x)
+            # Steering prediction
+            output = Dense(output_dim)(x)
 
-        model = Model(inputs=[img_input], outputs=[output])
-        # print(model.summary())
+            model = Model(inputs=[img_input_aps, img_input_dvs], outputs=[output])
+            print(model.summary())
+        else:
+            # Use a single input at time, aps or dvs
+            img_input = keras.Input(shape=img_shape)
+
+            base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
+
+            x = GlobalAveragePooling2D()(base_model.output)
+            x = Dense(1024, activation='relu')(x)
+
+            # Steering prediction
+            output = Dense(output_dim)(x)
+
+            model = Model(inputs=[img_input], outputs=[output])
+            # print(model.summary())
 
         # Save the model's architecture in JSON file
         with open("model_architecture.json", "w") as f:
@@ -132,7 +156,7 @@ def _main(flags: argparse) -> None:
         os.makedirs(checkpoint_path)
 
     # Create a Keras model
-    model = build_model(img_shape, 1, flags.model_architecture, flags.model_weights, use_imagenet_pretrain)
+    model = build_model(img_shape, 1, flags.model_architecture, flags.model_weights, use_imagenet_pretrain, frame_mode)
     train_model(model, train_image_loader, val_image_loader, batch_size, learn_rate, initial_epoch, epochs, checkpoint_path)
 
 

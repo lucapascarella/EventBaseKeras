@@ -15,6 +15,16 @@ from keras.models import model_from_json, load_model
 from img_utils import save_steering_degrees
 
 
+def explained_variance_1d(ypred, y):
+    """
+    Var[ypred - y] / var[y].
+    https://www.quora.com/What-is-the-meaning-proportion-of-variance-explained-in-linear-regression
+    """
+    assert y.ndim == 1 and ypred.ndim == 1
+    vary = np.var(y)
+    return np.nan if vary == 0 else 1 - np.var(y - ypred) / vary
+
+
 def build_model(model_architecture: str, weights_path: str, model_path: str, batch_size: int = None) -> Model:
     if model_architecture and weights_path:
         # Load the model architecture from file
@@ -45,7 +55,9 @@ def _main(flags: argparse) -> None:
     # Create a Keras model
     model = build_model(flags.model_architecture, flags.model_weights, flags.model, batch_size)
 
-    steps = np.minimum(int(np.ceil(test_image_loader.samples / batch_size)), 10)
+    n_step = int(np.ceil(test_image_loader.samples / batch_size))
+    steps = np.minimum(n_step, 3000)
+    print("Selected {} of {} steps".format(steps, n_step))
 
     # Get predictions and ground
     y_gt = np.zeros((steps, batch_size), dtype=backend.floatx())
@@ -55,6 +67,9 @@ def _main(flags: argparse) -> None:
     img_dir = os.path.join("evaluation", "images_{}".format(flags.frame_mode))
     if not os.path.exists(img_dir):
         os.makedirs(img_dir)
+
+    csv_file = open(os.path.join("evaluation", "steering_{}.csv".format(flags.frame_mode)), 'w')
+    csv_file.write("img_idx,real_angle,prediction_angle,RMSE\n")
 
     # Reload normalizer
     with open(os.path.join(Path(os.path.realpath(flags.test_dir)).parent, 'scaler.json'), 'r') as f:
@@ -91,8 +106,12 @@ def _main(flags: argparse) -> None:
 
         # Save images with steering overlay
         for i in range(batch_size):
-            img_filename = os.path.join(img_dir, "steering_{:03d}.png".format(step * batch_size + i))
-            save_steering_degrees(img_filename, utils.normalize_nparray(x[i], 0, 255), y_mp[step][i], y_gt[step][i], flags.frame_mode)
+            img_filename = os.path.join(img_dir, "steering_{:04d}.png".format(step * batch_size + i))
+            tmp_img = x[1][i] if flags.frame_mode == "cmb" else x[i]
+            save_steering_degrees(img_filename, utils.normalize_nparray(tmp_img, 0, 255), y_mp[step][i], y_gt[step][i], flags.frame_mode)
+            csv_file.write("{},{},{},{}\n".format(img_filename, y_gt[step][i], y_mp[step][i], np.sqrt(np.square(y_gt[step][i] - y_mp[step][i]))))
+
+    csv_file.close()
 
     # Reshape matrix
     gt_steer = y_gt.flatten()
@@ -104,7 +123,7 @@ def _main(flags: argparse) -> None:
 
     plt.plot(pred_steer)
     plt.plot(gt_steer)
-    error_steer = np.sqrt(np.square(pred_steer - gt_steer))
+    # error_steer = np.sqrt(np.square(pred_steer - gt_steer))
     # plt.plot(error_steer)
 
     plt.title('Steering prediction {}'.format(flags.frame_mode.upper()))
@@ -115,6 +134,11 @@ def _main(flags: argparse) -> None:
 
     plt.savefig("steering_prediction_{}.pdf".format(flags.frame_mode))
     # plt.show()
+
+    error_steer = np.sqrt(np.mean(np.square(pred_steer - gt_steer), axis=0))
+    print("RMSE: {:.2f}".format(error_steer))
+    ex_variance = explained_variance_1d(pred_steer, gt_steer)
+    print("EVA: {:.2f}".format(ex_variance))
 
 
 if __name__ == '__main__':
@@ -144,7 +168,7 @@ if __name__ == '__main__':
     #     print("Missing --model_architecture parameter")
     #     exit(-1)
 
-    if args.frame_mode not in ["dvs", "aps", "aps_diff"]:
+    if args.frame_mode not in ["dvs", "aps", "aps_diff", "cmb"]:
         print("A valid --frame_mode must be selected")
         exit(-1)
 

@@ -75,27 +75,23 @@ class CustomSequence(Sequence):
 
         self.scaler_json = os.path.join(Path(input_dir_data).parent, 'scaler.json')
 
-        if self.frame_mode == 'dvs':
+        if self.frame_mode == 'dvs' or self.frame_mode == 'cmb':
             self.datagen = ImageDataGenerator()
+            if self.frame_mode == 'cmb':
+                self.datagen_aps = ImageDataGenerator(rescale=1. / 255)
             percentile_filename = os.path.join(Path(input_dir_data).parent, 'percentiles.txt')
             try:
                 self.event_percentiles = np.loadtxt(percentile_filename, usecols=0, skiprows=1)
             except IOError:
                 raise IOError("Percentile file {} not found".format(percentile_filename))
         elif self.frame_mode == 'aps':
-            if is_training:
-                self.datagen = ImageDataGenerator(rotation_range=0.2, rescale=1. / 255, width_shift_range=0.2, height_shift_range=0.2)
-            else:
-                self.datagen = ImageDataGenerator(rescale=1. / 255)
-            self.event_percentiles = None
-        elif self.frame_mode == 'cmb':
-            if is_training:
+            if self.is_training:
                 self.datagen = ImageDataGenerator(rotation_range=0.2, rescale=1. / 255, width_shift_range=0.2, height_shift_range=0.2)
             else:
                 self.datagen = ImageDataGenerator(rescale=1. / 255)
             self.event_percentiles = None
         else:  # 'aps_diff'
-            if is_training:
+            if self.is_training:
                 self.datagen = ImageDataGenerator(rotation_range=0.2, width_shift_range=0.2, height_shift_range=0.2)
             else:
                 self.datagen = ImageDataGenerator()
@@ -114,7 +110,8 @@ class CustomSequence(Sequence):
                     steering = np.loadtxt(steering_filename, delimiter=',', skiprows=1)
                     steering_datapoints += steering.shape[0]
 
-                    sub_dir_level_two = os.path.join(sub_dir_level_one, self.frame_mode)
+                    frame_mode = self.frame_mode if self.frame_mode != 'cmb' else 'dvs'
+                    sub_dir_level_two = os.path.join(sub_dir_level_one, frame_mode)
                     unsorted_files = []
                     for file in os.listdir(sub_dir_level_two):
                         tmp = os.path.join(sub_dir_level_two, file)
@@ -227,38 +224,53 @@ class CustomSequence(Sequence):
             batch_x[batch_offset * len(batch_indexes) + i] = self.datagen.standardize(self.datagen.random_transform(x))
             batch_y[batch_offset * len(batch_indexes) + i] = self.input_data[batch_index].future_output
 
+    def read_batch_cmb(self, batch_x_aps: np.array, batch_x_dvs: np.array, batch_y: np.array, batch_offset: int, batch_indexes: List[int]):
+        for i, batch_index in enumerate(batch_indexes):
+            filename = self.input_data[batch_index].filename
+            x_dvs = img_utils.load_img(filename, 'dvs', self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
+            batch_x_aps[batch_offset * len(batch_indexes) + i] = self.datagen.standardize(self.datagen.random_transform(x_dvs))
+            x_aps = img_utils.load_img(filename.replace('/dvs/', '/aps/'), 'aps', self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
+            batch_x_dvs[batch_offset * len(batch_indexes) + i] = self.datagen_aps.standardize(self.datagen.random_transform(x_aps))
+            batch_y[batch_offset * len(batch_indexes) + i] = self.input_data[batch_index].future_output
+
     def __getitem__(self, index):
         # get batch indexes from shuffled indexes
         batch_indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
 
-        batch_x = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
-        batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
+        if self.frame_mode == 'cmb':
+            batch_x_aps = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
+            batch_x_dvs = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
+            batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
 
-        number_of_workers = 4
+            number_of_workers = 4
+            chunks = self.split_in_chunks(batch_indexes, number_of_workers)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(chunks)) as executor:
+                jobs = {executor.submit(self.read_batch_cmb, batch_x_aps, batch_x_dvs, batch_y, idx, chunk): chunk for idx, chunk in enumerate(chunks)}
+                for future in concurrent.futures.as_completed(jobs):
+                    future.result()
 
-        if number_of_workers > 1:
+            return [batch_x_aps, batch_x_dvs], batch_y
+        else:
+            batch_x = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
+            batch_y = np.zeros((self.batch_size, 1), dtype=backend.floatx())
+
+            number_of_workers = 4
             chunks = self.split_in_chunks(batch_indexes, number_of_workers)
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(chunks)) as executor:
                 jobs = {executor.submit(self.read_batch, batch_x, batch_y, idx, chunk): chunk for idx, chunk in enumerate(chunks)}
                 for future in concurrent.futures.as_completed(jobs):
                     future.result()
-        else:
-            self.read_batch(batch_x, batch_y, 0, batch_indexes)
-            # for i, batch_index in enumerate(batch_indexes):
-            #     x = img_utils.load_img(self.input_data[batch_index].filename, self.frame_mode, self.event_percentiles, self.image_size, self.crop_size, self.dvs_repeat_ch)
-            #     batch_x[i] = self.datagen.standardize(self.datagen.random_transform(x))
-            #     batch_y[i] = self.input_data[batch_index].future_output
 
-        if self.augment_data:
-            # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
-            batch_x_aug = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
-            # plt.figure(figsize=(10, 10))
-            for i in range(batch_x.shape[0]):
-                # Does not work without passing the two seconds arguments
-                batch_x_aug[i] = self.data_augmentation(batch_x[i], {"flip_horizontal": False, "flip_vertical": False})
-            return batch_x_aug, batch_y
-        else:
-            return batch_x, batch_y
+            if self.augment_data:
+                # Emulate ImageDataGenerator => random_transform(x) and standardize(x)
+                batch_x_aug = np.zeros((self.batch_size, self.image_size[0], self.image_size[1], self.image_size[2]), dtype=backend.floatx())
+                # plt.figure(figsize=(10, 10))
+                for i in range(batch_x.shape[0]):
+                    # Does not work without passing the two seconds arguments
+                    batch_x_aug[i] = self.data_augmentation(batch_x[i], {"flip_horizontal": False, "flip_vertical": False})
+                return batch_x_aug, batch_y
+            else:
+                return batch_x, batch_y
 
     def __len__(self):
         # Denotes the number of batches per epoch
