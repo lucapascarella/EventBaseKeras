@@ -12,12 +12,13 @@ import tensorflow as tf
 from tensorflow import keras
 from keras.models import Model
 from keras.callbacks import ModelCheckpoint
-from keras.applications import ResNet50, EfficientNetB6
+from keras.applications import ResNet50, EfficientNetB6, DenseNet121
 from keras.layers import Dense, GlobalAveragePooling2D, Concatenate
 from keras.models import model_from_json
 
 
-def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architecture: str, weights_path: str, use_imagenet: bool, frame_mode: str) -> Model:
+def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architecture: str, weights_path: str, use_imagenet: bool, frame_mode: str,
+                model_name: str) -> Model:
     if model_architecture:
         # Load the model architecture from file
         with open(model_architecture, 'r') as json_file:
@@ -29,13 +30,23 @@ def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architec
         if frame_mode == 'dbl':
             # Combine two inputs, aps and dvs images
             img_input_aps = keras.Input(shape=img_shape)
-            base_model_aps = ResNet50(input_tensor=img_input_aps, weights=weights, include_top=False)
+            if model_name == "DenseNet201":
+                base_model_aps = DenseNet121(input_tensor=img_input_aps, weights=weights, include_top=False)
+            elif model_name == "EfficientNetB6":
+                base_model_aps = EfficientNetB6(input_tensor=img_input_aps, weights=weights, include_top=False)
+            else:
+                base_model_aps = ResNet50(input_tensor=img_input_aps, weights=weights, include_top=False)
             x_aps = GlobalAveragePooling2D()(base_model_aps.output)
             for layer in base_model_aps.layers:
                 layer._name = layer.name + str("_aps")
 
             img_input_dvs = keras.Input(shape=img_shape)
-            base_model_dvs = ResNet50(input_tensor=img_input_dvs, weights=weights, include_top=False)
+            if model_name == "DenseNet201":
+                base_model_dvs = DenseNet121(input_tensor=img_input_dvs, weights=weights, include_top=False)
+            elif model_name == "EfficientNetB6":
+                base_model_dvs = EfficientNetB6(input_tensor=img_input_dvs, weights=weights, include_top=False)
+            else:
+                base_model_dvs = ResNet50(input_tensor=img_input_dvs, weights=weights, include_top=False)
             x_dvs = GlobalAveragePooling2D()(base_model_dvs.output)
             for layer in base_model_dvs.layers:
                 layer._name = layer.name + str("_dvs")
@@ -52,8 +63,13 @@ def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architec
             # Use a single input at time, aps or dvs
             img_input = keras.Input(shape=img_shape)
 
-            # base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
-            base_model = EfficientNetB6(input_tensor=img_input, weights=weights, include_top=False)
+            if model_name == "DenseNet201":
+                base_model = DenseNet121(input_tensor=img_input, weights=weights, include_top=False)
+            elif model_name == "EfficientNetB6":
+                base_model = EfficientNetB6(input_tensor=img_input, weights=weights, include_top=False)
+            else:
+                base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
+            # base_model = ConvNeXtSmall(input_tensor=img_input, weights=weights, include_top=False)
 
             x = GlobalAveragePooling2D()(base_model.output)
             x = Dense(1024, activation='relu')(x)
@@ -133,6 +149,7 @@ def _main(flags: argparse) -> None:
     use_imagenet_pretrain = flags.use_pretrain
     use_augmentation = flags.use_augmentation
     dvs_repeat_channels = flags.dvs_repeat
+    model_name = flags.model_name
 
     # Remove trailing os separator
     train_dir = flags.train_dir[:-1] if flags.train_dir.endswith(os.sep) else flags.train_dir
@@ -157,7 +174,7 @@ def _main(flags: argparse) -> None:
         os.makedirs(checkpoint_path)
 
     # Create a Keras model
-    model = build_model(img_shape, 1, flags.model_architecture, flags.model_weights, use_imagenet_pretrain, frame_mode)
+    model = build_model(img_shape, 1, flags.model_architecture, flags.model_weights, use_imagenet_pretrain, frame_mode, model_name)
     train_model(model, train_image_loader, val_image_loader, batch_size, learn_rate, initial_epoch, epochs, checkpoint_path)
 
 
@@ -175,10 +192,12 @@ if __name__ == '__main__':
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
     parser.add_argument("-p", '--use_pretrain', help="Load Imagenet pre-trained weights", type=utils.str2bool, default=True)
     parser.add_argument("-a", '--use_augmentation', help="Augment images while loading", type=utils.str2bool, default=False)
-    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool, default=True)
+    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool,
+                        default=True)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
     parser.add_argument("-id", "--img_depth", help="Target image depth", type=int, default=3)
+    parser.add_argument("-md", "--model_name", help="Model name between: ResNet50, DenseNet201, and EfficientNetB6", type=str, default="ResNet50")
     args = parser.parse_args()
 
     if args.train_dir is None:
