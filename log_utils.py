@@ -44,9 +44,9 @@ class MyCallback(callbacks.Callback):
                 raise ValueError('Optimizer must have a "learning_rate" attribute.')
 
         # Hard mining
-        sess = backend.get_session()
-        mse_function = self.batch_size - (self.batch_size - 10) * (np.maximum(0.0, 1.0 - np.exp(-1.0 / 30.0 * (epoch - 30.0))))
-        self.model.k_mse.assign(int(np.round(mse_function)), sess)
+        # sess = backend.get_session()
+        # mse_function = self.batch_size - (self.batch_size - 10) * (np.maximum(0.0, 1.0 - np.exp(-1.0 / 30.0 * (epoch - 30.0))))
+        # self.model.k_mse.assign(int(np.round(mse_function)), sess)
 
         # self.hl.set_xdata(np.append(self.hl.get_xdata(), logs['steering_loss']))
         # self.hl.set_ydata(np.append(self.hl.get_ydata(), logs['val_steering_loss']))

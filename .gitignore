@@ -13,6 +13,20 @@ model_architecture.json
 mnist.model
 evaluation
 
+checkpoints_SAS/
+evaluation_SAS/
+
+# Ignore archived
+*.tar.gz
+*.tar
+*.zip
+
+# Ignore PDF
+*.pdf
+
+# Ignore MAC files
+.DS_Store
+
 # Ignore HDF5 files
 *.h5
 

@@ -12,7 +12,7 @@ import tensorflow as tf
 from tensorflow import keras
 from keras.models import Model
 from keras.callbacks import ModelCheckpoint
-from keras.applications import ResNet50
+from keras.applications import ResNet50, EfficientNetB6
 from keras.layers import Dense, GlobalAveragePooling2D, Concatenate
 from keras.models import model_from_json
 
@@ -26,7 +26,7 @@ def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architec
         # None starts from scratch, 'imagenet' reuses imagenet pre-trained model
         weights = 'imagenet' if use_imagenet else None
 
-        if frame_mode == 'cmb':
+        if frame_mode == 'dbl':
             # Combine two inputs, aps and dvs images
             img_input_aps = keras.Input(shape=img_shape)
             base_model_aps = ResNet50(input_tensor=img_input_aps, weights=weights, include_top=False)
@@ -52,7 +52,8 @@ def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architec
             # Use a single input at time, aps or dvs
             img_input = keras.Input(shape=img_shape)
 
-            base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
+            # base_model = ResNet50(input_tensor=img_input, weights=weights, include_top=False)
+            base_model = EfficientNetB6(input_tensor=img_input, weights=weights, include_top=False)
 
             x = GlobalAveragePooling2D()(base_model.output)
             x = Dense(1024, activation='relu')(x)
@@ -168,7 +169,7 @@ if __name__ == '__main__':
     parser.add_argument("-w", "--model_weights", help="Load the model weights from a HDF5 checkpoint", type=str, default=None)
     parser.add_argument("-m", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
     parser.add_argument("-s", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
-    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps, aps_diff, or cmb", type=str, default=None)
+    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps, aps_diff, cmb, dbl", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-e", "--epochs", help="Number of epochs for training", type=int, default=30)
     parser.add_argument("-l", '--learning_rate', help="Initial learning rate for adam", type=float, default=1e-4)
@@ -196,7 +197,7 @@ if __name__ == '__main__':
         print("--train_dir {} is empty".format(args.train_dir))
         exit(-1)
 
-    if args.frame_mode is None or args.frame_mode not in ["dvs", "aps", "aps_diff", "cmb"]:
+    if args.frame_mode is None or args.frame_mode not in ["dvs", "aps", "aps_diff", "cmb", "dbl"]:
         print("A valid --frame_mode must be selected")
         exit(-1)
 

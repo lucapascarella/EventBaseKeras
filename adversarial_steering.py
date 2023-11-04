@@ -41,12 +41,14 @@ keras.utils.get_custom_objects().update({'negative_categorical_crossentropy': ne
 
 def load_custom_model(model_path: str, batch_size: int) -> Model:
     k_mse = tf.Variable(batch_size, trainable=False, name='k_mse', dtype=tf.int32)
-    target_model = load_model(model_path, custom_objects={'custom_mse': utils.hard_mining_mse(k_mse), 'steering_loss': utils.steering_loss, 'pred_std': utils.pred_std})
+    target_model = load_model(model_path,
+                              custom_objects={'custom_mse': utils.hard_mining_mse(k_mse), 'steering_loss': utils.steering_loss, 'pred_std': utils.pred_std})
     return target_model
 
 
 # function for generating an adversarial example given a base image, adversarial class target, classifier, and regularization type
-def generate_adversary(model_path: str, batch_size: int, img: np.array, target: float, regularization: keras.regularizers, loss_function: str) -> Tuple[np.array, np.array]:
+def generate_adversary(model_path: str, batch_size: int, img: np.array, target: float, regularization: keras.regularizers, loss_function: str) -> Tuple[
+    np.array, np.array]:
     img_shape = (200, 200, 3)
 
     # input for base image
@@ -55,7 +57,8 @@ def generate_adversary(model_path: str, batch_size: int, img: np.array, target: 
     one = Input(shape=(1,), name='unity')
 
     # layer for learning adversarial noise to apply to image
-    noise = Dense(math.prod(img_shape), activation=None, use_bias=False, kernel_initializer='random_normal', kernel_regularizer=regularization, name='adversarial_noise')(one)
+    noise = Dense(math.prod(img_shape), activation=None, use_bias=False, kernel_initializer='random_normal', kernel_regularizer=regularization,
+                  name='adversarial_noise')(one)
 
     # reshape noise in shape of image
     noise = Reshape(img_shape, name='reshape')(noise)
@@ -88,7 +91,7 @@ def generate_adversary(model_path: str, batch_size: int, img: np.array, target: 
     checkpoint = ModelCheckpoint(tmp_adversarial_filename, monitor='loss', verbose=0, save_best_only=True, save_weights_only=True, mode='auto', save_freq=1)
     # train adversarial image
     tt = target_vector.reshape(1, -1)
-    adversarial_model.fit(x={'image': img, 'unity': np.ones(shape=(1, 1))}, y=tt, epochs=10000, verbose=0, callbacks=[checkpoint])
+    adversarial_model.fit(x={'image': img, 'unity': np.ones(shape=(1, 1))}, y=tt, epochs=100, verbose=0, callbacks=[checkpoint])
     # restore best weights
     adversarial_model.load_weights(tmp_adversarial_filename)
 
@@ -173,7 +176,7 @@ def _main(flags: argparse):
         y_gt = utils.normalize_nparray(gt_steer[0], data_min, data_max, min_bound, max_bound)
         # Undo transformation for predictIons (only for steering)
         y_mp = utils.normalize_nparray(prediction[0], data_min, data_max, min_bound, max_bound)
-        print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
+        print('Actual prediction. Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
 
         # applying random noise does not fool the classifier
         quantized_noise = np.round(np.random.normal(loc=0.0, scale=0.01, size=(img_shape[0], img_shape[1], 1)) * 255.) / 255.
@@ -185,7 +188,7 @@ def _main(flags: argparse):
         noisy_prediction = target_model.predict(noisy_img.reshape(input_shape))[0]
         # Undo transformation for predictIons (only for steering)
         y_mp = utils.normalize_nparray(noisy_prediction[0], data_min, data_max, min_bound, max_bound)
-        print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
+        print('Noisy prediction. Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
         save_steering_degrees(os.path.join(img_dir, "random_img.png"), utils.normalize_nparray(noisy_img, 0, 255), y_mp, y_gt, flags.frame_mode)
         save_image(os.path.join(img_dir, "random_noise.png"), utils.normalize_nparray(quantized_noise, 0, 255))
 
@@ -195,17 +198,17 @@ def _main(flags: argparse):
         # non_targeted = -gt_steer
         generated_images = []
 
-        for idx, regularization in enumerate(regularizations):
+        for regularization, reg_name in zip(regularizations, regularization_names):
             generated_images.append(generate_adversary(model_path, batch_size, img.reshape(input_shape), -gt_steer[0], regularization, "mean_squared_error"))
             foolish_img = generated_images[-1][0]
             adversarial_prediction = target_model.predict(foolish_img.reshape((1, 200, 200, 3)))[0]
             # Undo transformation for predictIons (only for steering)
             y_mp = utils.normalize_nparray(adversarial_prediction[0], data_min, data_max, min_bound, max_bound)
-            print('Expected {:.1f}, predicted: {:.1f}'.format(y_gt, y_mp))
+            print('Foolish prediction with regularization: {}, Expected {:.1f}, predicted: {:.1f}'.format(reg_name, y_gt, y_mp))
 
-            img_filename = os.path.join(img_dir, "adv_img_{}.png".format(regularization_names[idx]))
+            img_filename = os.path.join(img_dir, "adv_img_{}.png".format(reg_name))
             save_steering_degrees(img_filename, utils.normalize_nparray(foolish_img, 0, 255), y_mp, y_gt, flags.frame_mode)
-            noise_filename = os.path.join(img_dir, "adv_noise_{}.png".format(regularization_names[idx]))
+            noise_filename = os.path.join(img_dir, "adv_noise_{}.png".format(reg_name))
             save_image(noise_filename, utils.normalize_nparray(generated_images[-1][1], 0, 255))
 
         # show_sub_figs("Non targeted", generated_images)
@@ -225,7 +228,8 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--test_dir", help="Folder containing testing experiments", type=str, default=None)
     parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
     parser.add_argument("-m", "--model_path", help="Load the model from a .model", type=str, default=None)
-    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool, default=True)
+    parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool,
+                        default=True)
     # parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=128)
     parser.add_argument("-i", "--img_index", help="Image index", type=int, default=116)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)

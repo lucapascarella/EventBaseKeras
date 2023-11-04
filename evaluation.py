@@ -107,7 +107,7 @@ def _main(flags: argparse) -> None:
         # Save images with steering overlay
         for i in range(batch_size):
             img_filename = os.path.join(img_dir, "steering_{:04d}.png".format(step * batch_size + i))
-            tmp_img = x[1][i] if flags.frame_mode == "cmb" else x[i]
+            tmp_img = x[1][i] if flags.frame_mode == "dbl" else x[i]
             save_steering_degrees(img_filename, utils.normalize_nparray(tmp_img, 0, 255), y_mp[step][i], y_gt[step][i], flags.frame_mode)
             csv_file.write("{},{},{},{}\n".format(img_filename, y_gt[step][i], y_mp[step][i], np.sqrt(np.square(y_gt[step][i] - y_mp[step][i]))))
 
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     parser.add_argument("-a", "--model_architecture", help="Load the model architecture from a JSON file", type=str, default=None)
     parser.add_argument("-m", "--model", help="Load the model from a .model", type=str, default=None)
     parser.add_argument("-s", "--random_seed", help="Set an initial random seed or leave it empty", type=int, default=18)
-    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps or aps_diff", type=str, default=None)
+    parser.add_argument("-f", "--frame_mode", help="Load mode for images, either dvs, aps, aps_diff, cmb, or dbl", type=str, default=None)
     parser.add_argument("-b", "--batch_size", help="Batch size in training and evaluation", type=int, default=64)
     parser.add_argument("-r", '--dvs_repeat', help="True repeats DVS diffs three times, False uses positive, negative, and diffs", type=utils.str2bool, default=True)
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
@@ -168,7 +168,7 @@ if __name__ == '__main__':
     #     print("Missing --model_architecture parameter")
     #     exit(-1)
 
-    if args.frame_mode not in ["dvs", "aps", "aps_diff", "cmb"]:
+    if args.frame_mode not in ["dvs", "aps", "aps_diff", "cmb", "dbl"]:
         print("A valid --frame_mode must be selected")
         exit(-1)
 
