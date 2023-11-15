@@ -1,3 +1,4 @@
+import cv2 # Needed for order import issue
 import argparse
 import os
 from typing import Tuple
@@ -12,7 +13,7 @@ import tensorflow as tf
 from tensorflow import keras
 from keras.models import Model
 from keras.callbacks import ModelCheckpoint
-from keras.applications import ResNet50, EfficientNetB6, DenseNet121
+from keras.applications import ResNet50, EfficientNetB4, EfficientNetB6, DenseNet121
 from keras.layers import Dense, GlobalAveragePooling2D, Concatenate
 from keras.models import model_from_json
 
@@ -65,6 +66,8 @@ def build_model(img_shape: Tuple[int, int, int], output_dim: int, model_architec
 
             if model_name == "DenseNet201":
                 base_model = DenseNet121(input_tensor=img_input, weights=weights, include_top=False)
+            elif model_name == "EfficientNetB4":
+                base_model = EfficientNetB4(input_tensor=img_input, weights=weights, include_top=False)
             elif model_name == "EfficientNetB6":
                 base_model = EfficientNetB6(input_tensor=img_input, weights=weights, include_top=False)
             else:
@@ -197,7 +200,7 @@ if __name__ == '__main__':
     parser.add_argument("-iw", "--img_width", help="Target image width", type=int, default=200)
     parser.add_argument("-ih", "--img_height", help="Target image height", type=int, default=200)
     parser.add_argument("-id", "--img_depth", help="Target image depth", type=int, default=3)
-    parser.add_argument("-md", "--model_name", help="Model name between: ResNet50, DenseNet201, and EfficientNetB6", type=str, default="ResNet50")
+    parser.add_argument("-md", "--model_name", help="Model name between: ResNet50, DenseNet201, EfficientNetB4, and EfficientNetB6", type=str, default="ResNet50")
     args = parser.parse_args()
 
     if args.train_dir is None:

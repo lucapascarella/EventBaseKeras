@@ -302,6 +302,13 @@ class CustomSequence(Sequence):
         # Denotes the number of batches per epoch
         return self.samples // self.batch_size
 
+    def get_filename(self, index):
+        batch_indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
+        filenames = []
+        for i, batch_index in enumerate(batch_indexes):
+            filenames.append(self.input_data[batch_index].filename)
+        return filenames
+
     @staticmethod
     def split_in_chunks(full_list: List[int], num_workers: int) -> List[List[int]]:
         num_chunks = math.ceil(len(full_list) / num_workers)

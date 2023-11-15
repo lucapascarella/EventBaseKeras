@@ -16,6 +16,8 @@ evaluation
 checkpoints_SAS/
 evaluation_SAS/
 
+checkpoints_EfficientNetB4/
+checkpoints_ResNet50/
 # Ignore archived
 *.tar.gz
 *.tar
